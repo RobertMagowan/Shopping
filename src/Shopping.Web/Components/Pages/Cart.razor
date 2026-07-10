@@ -1,0 +1,21 @@
+@page "/cart"
+@rendermode InteractiveServer
+@attribute [Authorize(Policy = ShoppingPolicies.CustomerAccess)]
+
+<PageTitle>Cart</PageTitle>
+
+<h1>Cart</h1>
+
+<p>The cart page is interactive, but cart state should be persisted through the API after each meaningful action.</p>
+
+<button @onclick="Increment">Add sample item</button>
+<p>Items in local UI state: @items</p>
+
+@code {
+    private int items;
+
+    private void Increment()
+    {
+        items++;
+    }
+}

@@ -1,0 +1,52 @@
+@page "/products"
+@using Shopping.Application.Catalog
+@using Shopping.Web.Services
+@attribute [StreamRendering]
+@inject ShoppingApiClient ShoppingApiClient
+
+<PageTitle>Products</PageTitle>
+
+<h1>Products</h1>
+
+<p>Browse the current product catalog.</p>
+
+@if (products is null)
+{
+    <p>Loading products...</p>
+}
+else if (products.Count == 0)
+{
+    <p>No products are currently available.</p>
+}
+else
+{
+    <section class="product-grid" aria-label="Available products">
+        @foreach (var product in products)
+        {
+            <article class="product-card">
+                <h2>@product.Name</h2>
+                <p>@product.Description</p>
+                <strong>@product.Currency @product.Price.ToString("0.00")</strong>
+                <p class="availability">@GetAvailabilityText(product)</p>
+                <form method="post" action="/cart/add">
+                    <input type="hidden" name="productId" value="@product.Id" />
+                    <button type="submit" disabled="@(!product.IsAvailable)">Add to cart</button>
+                </form>
+            </article>
+        }
+    </section>
+}
+
+@code {
+    private IReadOnlyCollection<ProductDto>? products;
+
+    protected override async Task OnInitializedAsync()
+    {
+        products = await ShoppingApiClient.GetProductsAsync();
+    }
+
+    private static string GetAvailabilityText(ProductDto product)
+    {
+        return product.IsAvailable ? "Available" : "Currently unavailable";
+    }
+}

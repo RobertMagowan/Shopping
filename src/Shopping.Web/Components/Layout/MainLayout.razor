@@ -1,0 +1,40 @@
+@inherits LayoutComponentBase
+
+<header class="site-header">
+    <a class="brand" href="/">Shopping</a>
+    <nav>
+        <a href="/products">Products</a>
+        <a href="/cart">Cart</a>
+        <AuthorizeView Policy="@ShoppingPolicies.AdminAccess">
+            <Authorized>
+                <a href="/admin/users">Users</a>
+            </Authorized>
+        </AuthorizeView>
+        <AuthorizeView Policy="@ShoppingPolicies.CatalogManagement">
+            <Authorized>
+                <a href="/admin/products">Catalog</a>
+            </Authorized>
+        </AuthorizeView>
+    </nav>
+    <div class="auth-links">
+        <AuthorizeView>
+            <Authorized>
+                <span>@context.User.Identity?.Name</span>
+                <a href="/MicrosoftIdentity/Account/SignOut">Sign out</a>
+            </Authorized>
+            <NotAuthorized>
+                <a href="/MicrosoftIdentity/Account/SignIn">Admin / customer sign in</a>
+            </NotAuthorized>
+        </AuthorizeView>
+    </div>
+</header>
+
+<main class="page-shell">
+    @Body
+</main>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">x</span>
+</div>

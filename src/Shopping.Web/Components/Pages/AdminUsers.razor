@@ -1,0 +1,26 @@
+@page "/admin/users"
+@rendermode InteractiveServer
+@attribute [Authorize(Policy = ShoppingPolicies.AdminAccess)]
+
+<PageTitle>User management</PageTitle>
+
+<h1>User management</h1>
+
+<p>Admin-only page for reviewing registered users and role assignments through Microsoft Graph-backed API operations.</p>
+
+<table>
+    <thead>
+        <tr>
+            <th>User</th>
+            <th>Role</th>
+            <th>Status</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td>Pending Entra External ID integration</td>
+            <td>Admin / Customer</td>
+            <td>Design placeholder</td>
+        </tr>
+    </tbody>
+</table>
