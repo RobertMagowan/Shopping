@@ -85,6 +85,15 @@ button {
     background: #ffffff;
 }
 
+.product-image {
+    width: 100%;
+    aspect-ratio: 16 / 10;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid #d8dee6;
+    background: #eef0f3;
+}
+
 .admin-panel {
     display: grid;
     gap: 1rem;

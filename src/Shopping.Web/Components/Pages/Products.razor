@@ -1,5 +1,5 @@
 @page "/products"
-@using Shopping.Application.Catalog
+@using Shopping.Contracts.Catalog
 @using Shopping.Web.Services
 @attribute [StreamRendering]
 @inject ShoppingApiClient ShoppingApiClient
@@ -24,6 +24,10 @@ else
         @foreach (var product in products)
         {
             <article class="product-card">
+                @if (!string.IsNullOrWhiteSpace(product.ImageUrl))
+                {
+                    <img class="product-image" src="@product.ImageUrl" alt="" loading="lazy" />
+                }
                 <h2>@product.Name</h2>
                 <p>@product.Description</p>
                 <strong>@product.Currency @product.Price.ToString("0.00")</strong>

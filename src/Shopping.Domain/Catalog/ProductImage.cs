@@ -1,10 +1,8 @@
-namespace Shopping.Infrastructure.Persistence.Entities;
+namespace Shopping.Domain.Catalog;
 
-public sealed class ProductImageEntity
+public sealed class ProductImage
 {
     public string Id { get; init; } = "";
-
-    public string ProductId { get; init; } = "";
 
     public string BlobName { get; init; } = "";
 
@@ -13,6 +11,4 @@ public sealed class ProductImageEntity
     public int DisplayOrder { get; init; }
 
     public bool IsPrimary { get; init; }
-
-    public ProductEntity Product { get; init; } = null!;
 }

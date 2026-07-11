@@ -1,8 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <ItemGroup>
-    <ProjectReference Include="..\Shopping.Application\Shopping.Application.csproj" />
-    <ProjectReference Include="..\Shopping.Domain\Shopping.Domain.csproj" />
+    <ProjectReference Include="..\Shopping.Contracts\Shopping.Contracts.csproj" />
   </ItemGroup>
 
   <ItemGroup>

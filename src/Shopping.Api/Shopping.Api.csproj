@@ -17,8 +17,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Shopping.Application\Shopping.Application.csproj" />
+    <ProjectReference Include="..\Shopping.Contracts\Shopping.Contracts.csproj" />
     <ProjectReference Include="..\Shopping.Infrastructure\Shopping.Infrastructure.csproj" />
-    <ProjectReference Include="..\Shopping.Domain\Shopping.Domain.csproj" />
   </ItemGroup>
 
 </Project>

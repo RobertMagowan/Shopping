@@ -1,4 +1,4 @@
-namespace Shopping.Domain.Security;
+namespace Shopping.Contracts.Security;
 
 public static class ShoppingRoles
 {

@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Shopping.Domain.Security;
+using Shopping.Contracts.Security;
 
 namespace Shopping.Api.Controllers;
 

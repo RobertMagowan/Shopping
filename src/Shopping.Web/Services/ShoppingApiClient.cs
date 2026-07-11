@@ -1,5 +1,5 @@
 using System.Net.Http.Json;
-using Shopping.Application.Catalog;
+using Shopping.Contracts.Catalog;
 
 namespace Shopping.Web.Services;
 

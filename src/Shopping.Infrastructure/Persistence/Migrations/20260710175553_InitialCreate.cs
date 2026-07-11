@@ -39,11 +39,11 @@ namespace Shopping.Infrastructure.Persistence.Migrations
                 columns: table => new
                 {
                     Id = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false),
-                    ProductId = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false),
                     BlobName = table.Column<string>(type: "nvarchar(512)", maxLength: 512, nullable: false),
                     AltText = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
                     DisplayOrder = table.Column<int>(type: "int", nullable: false),
-                    IsPrimary = table.Column<bool>(type: "bit", nullable: false)
+                    IsPrimary = table.Column<bool>(type: "bit", nullable: false),
+                    ProductId = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false)
                 },
                 constraints: table =>
                 {

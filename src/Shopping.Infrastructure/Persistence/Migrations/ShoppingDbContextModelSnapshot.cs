@@ -22,7 +22,7 @@ namespace Shopping.Infrastructure.Persistence.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
-            modelBuilder.Entity("Shopping.Infrastructure.Persistence.Entities.ProductEntity", b =>
+            modelBuilder.Entity("Shopping.Domain.Catalog.Product", b =>
                 {
                     b.Property<string>("Id")
                         .HasMaxLength(128)
@@ -245,7 +245,7 @@ namespace Shopping.Infrastructure.Persistence.Migrations
                         });
                 });
 
-            modelBuilder.Entity("Shopping.Infrastructure.Persistence.Entities.ProductImageEntity", b =>
+            modelBuilder.Entity("Shopping.Domain.Catalog.ProductImage", b =>
                 {
                     b.Property<string>("Id")
                         .HasMaxLength(128)
@@ -389,18 +389,16 @@ namespace Shopping.Infrastructure.Persistence.Migrations
                         });
                 });
 
-            modelBuilder.Entity("Shopping.Infrastructure.Persistence.Entities.ProductImageEntity", b =>
+            modelBuilder.Entity("Shopping.Domain.Catalog.ProductImage", b =>
                 {
-                    b.HasOne("Shopping.Infrastructure.Persistence.Entities.ProductEntity", "Product")
+                    b.HasOne("Shopping.Domain.Catalog.Product", null)
                         .WithMany("Images")
                         .HasForeignKey("ProductId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-
-                    b.Navigation("Product");
                 });
 
-            modelBuilder.Entity("Shopping.Infrastructure.Persistence.Entities.ProductEntity", b =>
+            modelBuilder.Entity("Shopping.Domain.Catalog.Product", b =>
                 {
                     b.Navigation("Images");
                 });

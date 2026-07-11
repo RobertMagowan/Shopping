@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Identity.Web;
 using Shopping.Application;
-using Shopping.Domain.Security;
+using Shopping.Contracts.Security;
 using Shopping.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -24,7 +24,7 @@ builder.Services.AddAuthorization(options =>
 });
 
 builder.Services.AddShoppingApplication();
-builder.Services.AddShoppingInfrastructure(builder.Configuration, builder.Environment);
+builder.Services.AddShoppingInfrastructure(builder.Configuration, builder.Environment.IsDevelopment());
 builder.Services.AddControllers();
 builder.Services.AddHealthChecks()
     .AddCheck("self", () => HealthCheckResult.Healthy());

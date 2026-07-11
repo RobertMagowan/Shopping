@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Shopping.Application\Shopping.Application.csproj" />
+    <ProjectReference Include="..\..\src\Shopping.Contracts\Shopping.Contracts.csproj" />
     <ProjectReference Include="..\..\src\Shopping.Domain\Shopping.Domain.csproj" />
   </ItemGroup>
 

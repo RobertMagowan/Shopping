@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/Shopping.Api/Shopping.Api.csproj" />
     <Project Path="src/Shopping.Application/Shopping.Application.csproj" />
+    <Project Path="src/Shopping.Contracts/Shopping.Contracts.csproj" />
     <Project Path="src/Shopping.Domain/Shopping.Domain.csproj" />
     <Project Path="src/Shopping.Infrastructure/Shopping.Infrastructure.csproj" />
     <Project Path="src/Shopping.Web/Shopping.Web.csproj" />

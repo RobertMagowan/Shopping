@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.Identity.Web;
 using Microsoft.Identity.Web.UI;
-using Shopping.Domain.Security;
+using Shopping.Contracts.Security;
 using Shopping.Web.Components;
 using Shopping.Web.Services;
 

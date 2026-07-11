@@ -7,7 +7,7 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddShoppingApplication(this IServiceCollection services)
     {
-        services.AddSingleton<IProductCatalog, InMemoryProductCatalog>();
+        services.AddScoped<IGetPublishedProductsQuery, GetPublishedProductsQuery>();
         return services;
     }
 }

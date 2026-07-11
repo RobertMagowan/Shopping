@@ -1,4 +1,4 @@
-namespace Shopping.Application.Catalog;
+namespace Shopping.Contracts.Catalog;
 
 public sealed record ProductDto(
     string Id,

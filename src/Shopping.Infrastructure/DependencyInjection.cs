@@ -1,15 +1,13 @@
-using Azure.Messaging.ServiceBus;
+using Azure.Core;
 using Azure.Storage.Blobs;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Shopping.Application.Catalog;
 using Shopping.Infrastructure.Catalog;
-using Shopping.Infrastructure.Configuration;
 using Shopping.Infrastructure.Persistence;
-using StackExchange.Redis;
+using Shopping.Infrastructure.Storage;
 
 namespace Shopping.Infrastructure;
 
@@ -18,47 +16,82 @@ public static class DependencyInjection
     public static IServiceCollection AddShoppingInfrastructure(
         this IServiceCollection services,
         IConfiguration configuration,
-        IHostEnvironment environment)
+        bool isDevelopment)
     {
-        var section = configuration.GetSection(ShoppingAzureOptions.SectionName);
-        services.Configure<ShoppingAzureOptions>(section);
-
-        var options = section.Get<ShoppingAzureOptions>() ?? new ShoppingAzureOptions();
         var databaseConnectionString = configuration.GetConnectionString("ShoppingDatabase");
+        var productImageStorageOptions = GetProductImageStorageOptions(configuration);
 
-        if (!string.IsNullOrWhiteSpace(options.Storage.ConnectionString))
-        {
-            services.AddSingleton(new BlobServiceClient(options.Storage.ConnectionString));
-        }
+        ValidateProductImageStorageAuthentication(productImageStorageOptions, isDevelopment);
+        services.AddSingleton(productImageStorageOptions);
+        services.AddSingleton(_ => CreateBlobContainerClient(productImageStorageOptions));
+        services.AddScoped<IProductImageUrlProvider, AzureBlobProductImageUrlProvider>();
+        services.AddHostedService<ProductImageBlobSeedHostedService>();
 
         if (!string.IsNullOrWhiteSpace(databaseConnectionString))
         {
-            ValidateDatabaseAuthentication(databaseConnectionString, environment);
+            ValidateDatabaseAuthentication(databaseConnectionString, isDevelopment);
             services.AddDbContext<ShoppingDbContext>(dbContextOptions =>
                 dbContextOptions.UseSqlServer(databaseConnectionString, sqlServerOptions =>
                     sqlServerOptions.EnableRetryOnFailure()));
-            services.AddScoped<IProductCatalog, SqlProductCatalog>();
-        }
-
-        if (!string.IsNullOrWhiteSpace(options.Redis.ConnectionString))
-        {
-            services.AddSingleton<IConnectionMultiplexer>(_ =>
-                ConnectionMultiplexer.Connect(options.Redis.ConnectionString));
-        }
-
-        if (!string.IsNullOrWhiteSpace(options.ServiceBus.ConnectionString))
-        {
-            services.AddSingleton(new ServiceBusClient(options.ServiceBus.ConnectionString));
+            services.AddScoped<IProductReadRepository, SqlProductReadRepository>();
         }
 
         return services;
     }
 
+    private static ProductImageStorageOptions GetProductImageStorageOptions(IConfiguration configuration)
+    {
+        var seedOnStartupValue = configuration[$"{ProductImageStorageOptions.SectionName}:SeedOnStartup"];
+
+        return new ProductImageStorageOptions
+        {
+            ConnectionString = configuration[$"{ProductImageStorageOptions.SectionName}:ConnectionString"] ?? "",
+            ServiceUri = configuration[$"{ProductImageStorageOptions.SectionName}:ServiceUri"] ?? "",
+            ContainerName = configuration[$"{ProductImageStorageOptions.SectionName}:ContainerName"] ?? "product-images",
+            PublicBaseUri = configuration[$"{ProductImageStorageOptions.SectionName}:PublicBaseUri"] ?? "",
+            SeedOnStartup = string.IsNullOrWhiteSpace(seedOnStartupValue) || bool.Parse(seedOnStartupValue)
+        };
+    }
+
+    private static BlobContainerClient CreateBlobContainerClient(ProductImageStorageOptions options)
+    {
+        var clientOptions = new BlobClientOptions(BlobClientOptions.ServiceVersion.V2021_12_02);
+
+        if (!string.IsNullOrWhiteSpace(options.ConnectionString))
+        {
+            return new BlobServiceClient(options.ConnectionString, clientOptions)
+                .GetBlobContainerClient(options.ContainerName);
+        }
+
+        if (!string.IsNullOrWhiteSpace(options.ServiceUri))
+        {
+            return new BlobServiceClient(
+                    new Uri(options.ServiceUri, UriKind.Absolute),
+                    CreateDefaultAzureCredential(),
+                    clientOptions)
+                .GetBlobContainerClient(options.ContainerName);
+        }
+
+        throw new InvalidOperationException(
+            "Missing product image storage configuration. Configure either " +
+            "'ProductImageStorage:ConnectionString' for local development or " +
+            "'ProductImageStorage:ServiceUri' for Azure-hosted environments.");
+    }
+
+    private static TokenCredential CreateDefaultAzureCredential()
+    {
+        var credentialType = Type.GetType(
+            "Azure.Identity.DefaultAzureCredential, Azure.Identity",
+            throwOnError: true);
+
+        return (TokenCredential)Activator.CreateInstance(credentialType!)!;
+    }
+
     private static void ValidateDatabaseAuthentication(
         string connectionString,
-        IHostEnvironment environment)
+        bool isDevelopment)
     {
-        if (environment.IsDevelopment())
+        if (isDevelopment)
         {
             return;
         }
@@ -79,5 +112,19 @@ public static class DependencyInjection
                 "Use an Azure SQL connection string with 'Authentication=Active Directory Managed Identity' " +
                 "or another managed identity compatible Microsoft Entra authentication mode.");
         }
+    }
+
+    private static void ValidateProductImageStorageAuthentication(
+        ProductImageStorageOptions options,
+        bool isDevelopment)
+    {
+        if (isDevelopment || string.IsNullOrWhiteSpace(options.ConnectionString))
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            "Non-development product image storage must use Microsoft Entra authentication. " +
+            "Configure 'ProductImageStorage:ServiceUri' and grant the app managed identity Blob Storage access.");
     }
 }
