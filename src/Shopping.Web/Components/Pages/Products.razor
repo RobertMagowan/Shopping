@@ -1,6 +1,7 @@
 @page "/products"
 @using Shopping.Contracts.Catalog
 @using Shopping.Web.Services
+@rendermode InteractiveServer
 @attribute [StreamRendering]
 @inject ShoppingApiClient ShoppingApiClient
 
@@ -23,17 +24,34 @@ else
     <section class="product-grid" aria-label="Available products">
         @foreach (var product in products)
         {
+            var productImages = GetProductImages(product);
+            var currentImageIndex = GetCurrentImageIndex(product, productImages);
+
             <article class="product-card">
-                @if (!string.IsNullOrWhiteSpace(product.ImageUrl))
+                @if (productImages.Length > 0)
                 {
-                    <img class="product-image" src="@product.ImageUrl" alt="" loading="lazy" />
+                    <figure class="product-carousel">
+                        <img class="product-image" src="@productImages[currentImageIndex]" alt="" loading="lazy"/>
+                        @if (productImages.Length > 1)
+                        {
+                            <figcaption class="product-carousel-controls">
+                                <button type="button" class="carousel-button" aria-label="Previous image for @product.Name" @onclick="() => MoveImage(product, productImages, -1)">
+                                    Previous
+                                </button>
+                                <span class="carousel-count">@($"{currentImageIndex + 1} / {productImages.Length}")</span>
+                                <button type="button" class="carousel-button" aria-label="Next image for @product.Name" @onclick="() => MoveImage(product, productImages, 1)">
+                                    Next
+                                </button>
+                            </figcaption>
+                        }
+                    </figure>
                 }
                 <h2>@product.Name</h2>
                 <p>@product.Description</p>
                 <strong>@product.Currency @product.Price.ToString("0.00")</strong>
                 <p class="availability">@GetAvailabilityText(product)</p>
                 <form method="post" action="/cart/add">
-                    <input type="hidden" name="productId" value="@product.Id" />
+                    <input type="hidden" name="productId" value="@product.Id"/>
                     <button type="submit" disabled="@(!product.IsAvailable)">Add to cart</button>
                 </form>
             </article>
@@ -43,14 +61,47 @@ else
 
 @code {
     private IReadOnlyCollection<ProductDto>? products;
+    private readonly Dictionary<string, int> selectedImageIndexes = [];
 
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnInitializedAsync() { products = await ShoppingApiClient.GetProductsAsync(); }
+
+    private static string GetAvailabilityText(ProductDto product) { return product.IsAvailable ? "Available" : "Currently unavailable"; }
+
+    private static string[] GetProductImages(ProductDto product)
     {
-        products = await ShoppingApiClient.GetProductsAsync();
+        if (product.ImageUrls.Length > 0)
+        {
+            return product.ImageUrls;
+        }
+
+        return string.IsNullOrWhiteSpace(product.ImageUrl) ? [] : [product.ImageUrl];
     }
 
-    private static string GetAvailabilityText(ProductDto product)
+    private int GetCurrentImageIndex(ProductDto product, string[] productImages)
     {
-        return product.IsAvailable ? "Available" : "Currently unavailable";
+        if (productImages.Length == 0)
+        {
+            return 0;
+        }
+
+        if (!selectedImageIndexes.TryGetValue(product.Id, out var index) || index >= productImages.Length)
+        {
+            selectedImageIndexes[product.Id] = 0;
+            return 0;
+        }
+
+        return index;
     }
+
+    private void MoveImage(ProductDto product, string[] productImages, int direction)
+    {
+        if (productImages.Length <= 1)
+        {
+            return;
+        }
+
+        var currentIndex = GetCurrentImageIndex(product, productImages);
+        selectedImageIndexes[product.Id] = (currentIndex + direction + productImages.Length) % productImages.Length;
+    }
+
 }

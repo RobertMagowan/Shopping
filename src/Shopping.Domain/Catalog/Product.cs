@@ -26,11 +26,22 @@ public sealed class Product
 
     public ICollection<ProductImage> Images { get; init; } = [];
 
-    public bool CanBePurchased => IsPublished && IsAvailable && StockQuantity > 0;
+    public bool CanBePurchased { get => IsPublished && IsAvailable && StockQuantity > 0; }
 
-    public string? PrimaryImageBlobName => Images
-        .OrderByDescending(image => image.IsPrimary)
-        .ThenBy(image => image.DisplayOrder)
-        .Select(image => image.BlobName)
-        .FirstOrDefault();
+    public string? PrimaryImageBlobName
+    {
+        get =>
+            Images
+                .OrderByDescending(image => image.IsPrimary)
+                .ThenBy(image => image.DisplayOrder)
+                .Select(image => image.BlobName)
+                .FirstOrDefault();
+    }
+
+    public IReadOnlyCollection<string> OrderedImageBlobNames =>
+        Images
+            .OrderByDescending(image => image.IsPrimary)
+            .ThenBy(image => image.DisplayOrder)
+            .Select(image => image.BlobName)
+            .ToArray();
 }

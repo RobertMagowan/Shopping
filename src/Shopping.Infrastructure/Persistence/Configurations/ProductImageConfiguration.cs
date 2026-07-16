@@ -1,8 +1,8 @@
+namespace Shopping.Infrastructure.Persistence.Configurations;
+
+using Domain.Catalog;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
-using Shopping.Domain.Catalog;
-
-namespace Shopping.Infrastructure.Persistence.Configurations;
 
 public sealed class ProductImageConfiguration : IEntityTypeConfiguration<ProductImage>
 {
@@ -18,9 +18,9 @@ public sealed class ProductImageConfiguration : IEntityTypeConfiguration<Product
         entity.Property(image => image.IsPrimary).IsRequired();
 
         entity.HasOne<Product>()
-            .WithMany(product => product.Images)
-            .HasForeignKey("ProductId")
-            .OnDelete(DeleteBehavior.Cascade);
+              .WithMany(product => product.Images)
+              .HasForeignKey("ProductId")
+              .OnDelete(DeleteBehavior.Cascade);
 
         entity.HasIndex("ProductId", nameof(ProductImage.DisplayOrder));
         entity.HasData(CatalogSeedData.ProductImages);

@@ -1,6 +1,6 @@
-using Shopping.Domain.Catalog;
-
 namespace Shopping.Application.Catalog;
+
+using Domain.Catalog;
 
 public interface IProductReadRepository
 {

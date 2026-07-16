@@ -11,15 +11,15 @@
 <section class="admin-panel">
     <label>
         Product name
-        <input @bind="name" />
+        <input @bind="name"/>
     </label>
     <label>
         Price
-        <input type="number" step="0.01" @bind="price" />
+        <input type="number" step="0.01" @bind="price"/>
     </label>
     <label>
         Available
-        <input type="checkbox" @bind="available" />
+        <input type="checkbox" @bind="available"/>
     </label>
     <button @onclick="Save">Save draft</button>
 </section>
@@ -32,8 +32,5 @@
     private bool available = true;
     private string status = "";
 
-    private void Save()
-    {
-        status = $"Draft saved for {name} at GBP {price:0.00}; available: {available}.";
-    }
+    private void Save() { status = $"Draft saved for {name} at GBP {price:0.00}; available: {available}."; }
 }

@@ -1,22 +1,21 @@
+namespace Shopping.Infrastructure;
+
+using Application.Catalog;
 using Azure.Core;
 using Azure.Storage.Blobs;
+using Catalog;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Shopping.Application.Catalog;
-using Shopping.Infrastructure.Catalog;
-using Shopping.Infrastructure.Persistence;
-using Shopping.Infrastructure.Storage;
-
-namespace Shopping.Infrastructure;
+using Persistence;
+using Storage;
 
 public static class DependencyInjection
 {
-    public static IServiceCollection AddShoppingInfrastructure(
-        this IServiceCollection services,
-        IConfiguration configuration,
-        bool isDevelopment)
+    public static IServiceCollection AddShoppingInfrastructure(this IServiceCollection services,
+                                                               IConfiguration configuration,
+                                                               bool isDevelopment)
     {
         var databaseConnectionString = configuration.GetConnectionString("ShoppingDatabase");
         var productImageStorageOptions = GetProductImageStorageOptions(configuration);
@@ -31,8 +30,8 @@ public static class DependencyInjection
         {
             ValidateDatabaseAuthentication(databaseConnectionString, isDevelopment);
             services.AddDbContext<ShoppingDbContext>(dbContextOptions =>
-                dbContextOptions.UseSqlServer(databaseConnectionString, sqlServerOptions =>
-                    sqlServerOptions.EnableRetryOnFailure()));
+                                                         dbContextOptions.UseSqlServer(databaseConnectionString, sqlServerOptions =>
+                                                                                           sqlServerOptions.EnableRetryOnFailure()));
             services.AddScoped<IProductReadRepository, SqlProductReadRepository>();
         }
 
@@ -65,31 +64,25 @@ public static class DependencyInjection
 
         if (!string.IsNullOrWhiteSpace(options.ServiceUri))
         {
-            return new BlobServiceClient(
-                    new Uri(options.ServiceUri, UriKind.Absolute),
-                    CreateDefaultAzureCredential(),
-                    clientOptions)
+            return new BlobServiceClient(new Uri(options.ServiceUri, UriKind.Absolute), CreateDefaultAzureCredential(), clientOptions)
                 .GetBlobContainerClient(options.ContainerName);
         }
 
-        throw new InvalidOperationException(
-            "Missing product image storage configuration. Configure either " +
-            "'ProductImageStorage:ConnectionString' for local development or " +
-            "'ProductImageStorage:ServiceUri' for Azure-hosted environments.");
+        throw new InvalidOperationException("Missing product image storage configuration. Configure either " +
+                                            "'ProductImageStorage:ConnectionString' for local development or " +
+                                            "'ProductImageStorage:ServiceUri' for Azure-hosted environments.");
     }
 
     private static TokenCredential CreateDefaultAzureCredential()
     {
-        var credentialType = Type.GetType(
-            "Azure.Identity.DefaultAzureCredential, Azure.Identity",
-            throwOnError: true);
+        var credentialType = Type.GetType("Azure.Identity.DefaultAzureCredential, Azure.Identity",
+                                          true);
 
         return (TokenCredential)Activator.CreateInstance(credentialType!)!;
     }
 
-    private static void ValidateDatabaseAuthentication(
-        string connectionString,
-        bool isDevelopment)
+    private static void ValidateDatabaseAuthentication(string connectionString,
+                                                       bool isDevelopment)
     {
         if (isDevelopment)
         {
@@ -99,32 +92,28 @@ public static class DependencyInjection
         var builder = new SqlConnectionStringBuilder(connectionString);
         var authentication = builder.Authentication.ToString();
 
-        var usesManagedIdentity =
-            string.Equals(authentication, "ActiveDirectoryManagedIdentity", StringComparison.Ordinal) ||
-            string.Equals(authentication, "ActiveDirectoryMSI", StringComparison.Ordinal) ||
-            string.Equals(authentication, "ActiveDirectoryDefault", StringComparison.Ordinal) ||
-            string.Equals(authentication, "ActiveDirectoryWorkloadIdentity", StringComparison.Ordinal);
+        var usesManagedIdentity = string.Equals(authentication, "ActiveDirectoryManagedIdentity", StringComparison.Ordinal) ||
+                                  string.Equals(authentication, "ActiveDirectoryMSI", StringComparison.Ordinal) ||
+                                  string.Equals(authentication, "ActiveDirectoryDefault", StringComparison.Ordinal) ||
+                                  string.Equals(authentication, "ActiveDirectoryWorkloadIdentity", StringComparison.Ordinal);
 
         if (!usesManagedIdentity || !string.IsNullOrWhiteSpace(builder.Password))
         {
-            throw new InvalidOperationException(
-                "Non-development database connections must use Microsoft Entra authentication. " +
-                "Use an Azure SQL connection string with 'Authentication=Active Directory Managed Identity' " +
-                "or another managed identity compatible Microsoft Entra authentication mode.");
+            throw new InvalidOperationException("Non-development database connections must use Microsoft Entra authentication. " +
+                                                "Use an Azure SQL connection string with 'Authentication=Active Directory Managed Identity' " +
+                                                "or another managed identity compatible Microsoft Entra authentication mode.");
         }
     }
 
-    private static void ValidateProductImageStorageAuthentication(
-        ProductImageStorageOptions options,
-        bool isDevelopment)
+    private static void ValidateProductImageStorageAuthentication(ProductImageStorageOptions options,
+                                                                  bool isDevelopment)
     {
         if (isDevelopment || string.IsNullOrWhiteSpace(options.ConnectionString))
         {
             return;
         }
 
-        throw new InvalidOperationException(
-            "Non-development product image storage must use Microsoft Entra authentication. " +
-            "Configure 'ProductImageStorage:ServiceUri' and grant the app managed identity Blob Storage access.");
+        throw new InvalidOperationException("Non-development product image storage must use Microsoft Entra authentication. " +
+                                            "Configure 'ProductImageStorage:ServiceUri' and grant the app managed identity Blob Storage access.");
     }
 }

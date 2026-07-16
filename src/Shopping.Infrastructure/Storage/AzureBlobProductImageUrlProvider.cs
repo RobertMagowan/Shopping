@@ -1,7 +1,7 @@
-using Azure.Storage.Blobs;
-using Shopping.Application.Catalog;
-
 namespace Shopping.Infrastructure.Storage;
+
+using Application.Catalog;
+using Azure.Storage.Blobs;
 
 public sealed class AzureBlobProductImageUrlProvider(
     BlobContainerClient containerClient,

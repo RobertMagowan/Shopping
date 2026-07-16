@@ -7,4 +7,5 @@ public sealed record ProductDto(
     decimal Price,
     string Currency,
     bool IsAvailable,
-    string? ImageUrl);
+    string? ImageUrl,
+    string[] ImageUrls);
