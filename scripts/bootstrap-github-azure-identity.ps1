@@ -74,7 +74,7 @@ function Set-FederatedCredential {
             return
         }
 
-        Invoke-AzJson -Arguments @("ad", "app", "federated-credential", "update", "--id", $AppId, "--federated-credential-id", $Name, "--parameters", $tempFile.FullName) | Out-Null
+        Invoke-AzJson -Arguments @("ad", "app", "federated-credential", "update", "--id", $AppId, "--federated-credential-id", $match[0].id, "--parameters", $tempFile.FullName) | Out-Null
     }
     finally {
         Remove-Item -LiteralPath $tempFile.FullName -Force -ErrorAction SilentlyContinue
