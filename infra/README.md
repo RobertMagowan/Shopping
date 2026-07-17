@@ -119,6 +119,8 @@ The `app` workflow:
 3. Run `app` manually for `dev` to build, migrate, and deploy the first runnable images.
 4. Confirm both health checks and customer sign-in before promoting the same commit through test and production.
 
+For an existing installation, reconcile the GitHub bootstrap stage before merging workflow changes that introduce new environment variables or required checks. This prevents the automatic development deployment from starting with stale GitHub configuration.
+
 Use `what-if` output as the reviewable deployment plan before approving production changes.
 
 To deploy:
