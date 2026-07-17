@@ -94,6 +94,32 @@ button {
     background: #eef0f3;
 }
 
+.product-carousel {
+    display: grid;
+    gap: .65rem;
+    margin: 0;
+}
+
+.product-carousel-controls {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: .5rem;
+    align-items: center;
+}
+
+.carousel-button {
+    min-height: 2rem;
+    padding: 0 .65rem;
+    font-size: .9rem;
+}
+
+.carousel-count {
+    min-width: 3.5rem;
+    color: #4b5563;
+    font-size: .9rem;
+    text-align: center;
+}
+
 .admin-panel {
     display: grid;
     gap: 1rem;

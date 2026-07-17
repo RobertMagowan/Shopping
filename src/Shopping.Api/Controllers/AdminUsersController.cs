@@ -1,8 +1,8 @@
+namespace Shopping.Api.Controllers;
+
+using Contracts.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Shopping.Contracts.Security;
-
-namespace Shopping.Api.Controllers;
 
 [ApiController]
 [Route("api/admin/users")]
@@ -10,8 +10,5 @@ namespace Shopping.Api.Controllers;
 public sealed class AdminUsersController : ControllerBase
 {
     [HttpGet]
-    public IActionResult GetUsers()
-    {
-        return Ok(Array.Empty<object>());
-    }
+    public IActionResult GetUsers() { return Ok(Array.Empty<object>()); }
 }

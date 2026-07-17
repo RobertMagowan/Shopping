@@ -12,7 +12,7 @@ using Shopping.Infrastructure.Persistence;
 namespace Shopping.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ShoppingDbContext))]
-    [Migration("20260710175553_InitialCreate")]
+    [Migration("20260711050716_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -285,7 +285,7 @@ namespace Shopping.Infrastructure.Persistence.Migrations
                         new
                         {
                             Id = "starter-coffee-primary",
-                            AltText = "Starter Coffee product image",
+                            AltText = "Starter Coffee primary product image",
                             BlobName = "products/starter-coffee.svg",
                             DisplayOrder = 0,
                             IsPrimary = true,
@@ -293,8 +293,26 @@ namespace Shopping.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Id = "starter-coffee-detail",
+                            AltText = "Starter Coffee detail product image",
+                            BlobName = "products/starter-coffee-detail.svg",
+                            DisplayOrder = 1,
+                            IsPrimary = false,
+                            ProductId = "starter-coffee"
+                        },
+                        new
+                        {
+                            Id = "starter-coffee-lifestyle",
+                            AltText = "Starter Coffee lifestyle product image",
+                            BlobName = "products/starter-coffee-lifestyle.svg",
+                            DisplayOrder = 2,
+                            IsPrimary = false,
+                            ProductId = "starter-coffee"
+                        },
+                        new
+                        {
                             Id = "ceramic-mug-primary",
-                            AltText = "Ceramic Mug product image",
+                            AltText = "Ceramic Mug primary product image",
                             BlobName = "products/ceramic-mug.svg",
                             DisplayOrder = 0,
                             IsPrimary = true,
@@ -302,8 +320,26 @@ namespace Shopping.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Id = "ceramic-mug-detail",
+                            AltText = "Ceramic Mug detail product image",
+                            BlobName = "products/ceramic-mug-detail.svg",
+                            DisplayOrder = 1,
+                            IsPrimary = false,
+                            ProductId = "ceramic-mug"
+                        },
+                        new
+                        {
+                            Id = "ceramic-mug-lifestyle",
+                            AltText = "Ceramic Mug lifestyle product image",
+                            BlobName = "products/ceramic-mug-lifestyle.svg",
+                            DisplayOrder = 2,
+                            IsPrimary = false,
+                            ProductId = "ceramic-mug"
+                        },
+                        new
+                        {
                             Id = "travel-tumbler-primary",
-                            AltText = "Travel Tumbler product image",
+                            AltText = "Travel Tumbler primary product image",
                             BlobName = "products/travel-tumbler.svg",
                             DisplayOrder = 0,
                             IsPrimary = true,
@@ -311,8 +347,26 @@ namespace Shopping.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Id = "travel-tumbler-detail",
+                            AltText = "Travel Tumbler detail product image",
+                            BlobName = "products/travel-tumbler-detail.svg",
+                            DisplayOrder = 1,
+                            IsPrimary = false,
+                            ProductId = "travel-tumbler"
+                        },
+                        new
+                        {
+                            Id = "travel-tumbler-lifestyle",
+                            AltText = "Travel Tumbler lifestyle product image",
+                            BlobName = "products/travel-tumbler-lifestyle.svg",
+                            DisplayOrder = 2,
+                            IsPrimary = false,
+                            ProductId = "travel-tumbler"
+                        },
+                        new
+                        {
                             Id = "espresso-beans-primary",
-                            AltText = "Espresso Beans product image",
+                            AltText = "Espresso Beans primary product image",
                             BlobName = "products/espresso-beans.svg",
                             DisplayOrder = 0,
                             IsPrimary = true,
@@ -320,8 +374,26 @@ namespace Shopping.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Id = "espresso-beans-detail",
+                            AltText = "Espresso Beans detail product image",
+                            BlobName = "products/espresso-beans-detail.svg",
+                            DisplayOrder = 1,
+                            IsPrimary = false,
+                            ProductId = "espresso-beans"
+                        },
+                        new
+                        {
+                            Id = "espresso-beans-lifestyle",
+                            AltText = "Espresso Beans lifestyle product image",
+                            BlobName = "products/espresso-beans-lifestyle.svg",
+                            DisplayOrder = 2,
+                            IsPrimary = false,
+                            ProductId = "espresso-beans"
+                        },
+                        new
+                        {
                             Id = "breakfast-tea-primary",
-                            AltText = "Breakfast Tea product image",
+                            AltText = "Breakfast Tea primary product image",
                             BlobName = "products/breakfast-tea.svg",
                             DisplayOrder = 0,
                             IsPrimary = true,
@@ -329,8 +401,26 @@ namespace Shopping.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Id = "breakfast-tea-detail",
+                            AltText = "Breakfast Tea detail product image",
+                            BlobName = "products/breakfast-tea-detail.svg",
+                            DisplayOrder = 1,
+                            IsPrimary = false,
+                            ProductId = "breakfast-tea"
+                        },
+                        new
+                        {
+                            Id = "breakfast-tea-lifestyle",
+                            AltText = "Breakfast Tea lifestyle product image",
+                            BlobName = "products/breakfast-tea-lifestyle.svg",
+                            DisplayOrder = 2,
+                            IsPrimary = false,
+                            ProductId = "breakfast-tea"
+                        },
+                        new
+                        {
                             Id = "glass-teapot-primary",
-                            AltText = "Glass Teapot product image",
+                            AltText = "Glass Teapot primary product image",
                             BlobName = "products/glass-teapot.svg",
                             DisplayOrder = 0,
                             IsPrimary = true,
@@ -338,8 +428,26 @@ namespace Shopping.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Id = "glass-teapot-detail",
+                            AltText = "Glass Teapot detail product image",
+                            BlobName = "products/glass-teapot-detail.svg",
+                            DisplayOrder = 1,
+                            IsPrimary = false,
+                            ProductId = "glass-teapot"
+                        },
+                        new
+                        {
+                            Id = "glass-teapot-lifestyle",
+                            AltText = "Glass Teapot lifestyle product image",
+                            BlobName = "products/glass-teapot-lifestyle.svg",
+                            DisplayOrder = 2,
+                            IsPrimary = false,
+                            ProductId = "glass-teapot"
+                        },
+                        new
+                        {
                             Id = "pour-over-kit-primary",
-                            AltText = "Pour Over Kit product image",
+                            AltText = "Pour Over Kit primary product image",
                             BlobName = "products/pour-over-kit.svg",
                             DisplayOrder = 0,
                             IsPrimary = true,
@@ -347,8 +455,26 @@ namespace Shopping.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Id = "pour-over-kit-detail",
+                            AltText = "Pour Over Kit detail product image",
+                            BlobName = "products/pour-over-kit-detail.svg",
+                            DisplayOrder = 1,
+                            IsPrimary = false,
+                            ProductId = "pour-over-kit"
+                        },
+                        new
+                        {
+                            Id = "pour-over-kit-lifestyle",
+                            AltText = "Pour Over Kit lifestyle product image",
+                            BlobName = "products/pour-over-kit-lifestyle.svg",
+                            DisplayOrder = 2,
+                            IsPrimary = false,
+                            ProductId = "pour-over-kit"
+                        },
+                        new
+                        {
                             Id = "milk-frother-primary",
-                            AltText = "Milk Frother product image",
+                            AltText = "Milk Frother primary product image",
                             BlobName = "products/milk-frother.svg",
                             DisplayOrder = 0,
                             IsPrimary = true,
@@ -356,8 +482,26 @@ namespace Shopping.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Id = "milk-frother-detail",
+                            AltText = "Milk Frother detail product image",
+                            BlobName = "products/milk-frother-detail.svg",
+                            DisplayOrder = 1,
+                            IsPrimary = false,
+                            ProductId = "milk-frother"
+                        },
+                        new
+                        {
+                            Id = "milk-frother-lifestyle",
+                            AltText = "Milk Frother lifestyle product image",
+                            BlobName = "products/milk-frother-lifestyle.svg",
+                            DisplayOrder = 2,
+                            IsPrimary = false,
+                            ProductId = "milk-frother"
+                        },
+                        new
+                        {
                             Id = "coffee-filters-primary",
-                            AltText = "Coffee Filters product image",
+                            AltText = "Coffee Filters primary product image",
                             BlobName = "products/coffee-filters.svg",
                             DisplayOrder = 0,
                             IsPrimary = true,
@@ -365,8 +509,26 @@ namespace Shopping.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Id = "coffee-filters-detail",
+                            AltText = "Coffee Filters detail product image",
+                            BlobName = "products/coffee-filters-detail.svg",
+                            DisplayOrder = 1,
+                            IsPrimary = false,
+                            ProductId = "coffee-filters"
+                        },
+                        new
+                        {
+                            Id = "coffee-filters-lifestyle",
+                            AltText = "Coffee Filters lifestyle product image",
+                            BlobName = "products/coffee-filters-lifestyle.svg",
+                            DisplayOrder = 2,
+                            IsPrimary = false,
+                            ProductId = "coffee-filters"
+                        },
+                        new
+                        {
                             Id = "cold-brew-bottle-primary",
-                            AltText = "Cold Brew Bottle product image",
+                            AltText = "Cold Brew Bottle primary product image",
                             BlobName = "products/cold-brew-bottle.svg",
                             DisplayOrder = 0,
                             IsPrimary = true,
@@ -374,8 +536,26 @@ namespace Shopping.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Id = "cold-brew-bottle-detail",
+                            AltText = "Cold Brew Bottle detail product image",
+                            BlobName = "products/cold-brew-bottle-detail.svg",
+                            DisplayOrder = 1,
+                            IsPrimary = false,
+                            ProductId = "cold-brew-bottle"
+                        },
+                        new
+                        {
+                            Id = "cold-brew-bottle-lifestyle",
+                            AltText = "Cold Brew Bottle lifestyle product image",
+                            BlobName = "products/cold-brew-bottle-lifestyle.svg",
+                            DisplayOrder = 2,
+                            IsPrimary = false,
+                            ProductId = "cold-brew-bottle"
+                        },
+                        new
+                        {
                             Id = "digital-scale-primary",
-                            AltText = "Digital Scale product image",
+                            AltText = "Digital Scale primary product image",
                             BlobName = "products/digital-scale.svg",
                             DisplayOrder = 0,
                             IsPrimary = true,
@@ -383,11 +563,47 @@ namespace Shopping.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Id = "digital-scale-detail",
+                            AltText = "Digital Scale detail product image",
+                            BlobName = "products/digital-scale-detail.svg",
+                            DisplayOrder = 1,
+                            IsPrimary = false,
+                            ProductId = "digital-scale"
+                        },
+                        new
+                        {
+                            Id = "digital-scale-lifestyle",
+                            AltText = "Digital Scale lifestyle product image",
+                            BlobName = "products/digital-scale-lifestyle.svg",
+                            DisplayOrder = 2,
+                            IsPrimary = false,
+                            ProductId = "digital-scale"
+                        },
+                        new
+                        {
                             Id = "gift-card-primary",
-                            AltText = "Gift Card product image",
+                            AltText = "Gift Card primary product image",
                             BlobName = "products/gift-card.svg",
                             DisplayOrder = 0,
                             IsPrimary = true,
+                            ProductId = "gift-card"
+                        },
+                        new
+                        {
+                            Id = "gift-card-detail",
+                            AltText = "Gift Card detail product image",
+                            BlobName = "products/gift-card-detail.svg",
+                            DisplayOrder = 1,
+                            IsPrimary = false,
+                            ProductId = "gift-card"
+                        },
+                        new
+                        {
+                            Id = "gift-card-lifestyle",
+                            AltText = "Gift Card lifestyle product image",
+                            BlobName = "products/gift-card-lifestyle.svg",
+                            DisplayOrder = 2,
+                            IsPrimary = false,
                             ProductId = "gift-card"
                         });
                 });

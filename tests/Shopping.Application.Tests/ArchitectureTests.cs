@@ -1,8 +1,8 @@
-using Shopping.Application;
-using Shopping.Contracts.Catalog;
-using Shopping.Domain.Catalog;
-
 namespace Shopping.Application.Tests;
+
+using System.Reflection;
+using Contracts.Catalog;
+using Domain.Catalog;
 
 public sealed class ArchitectureTests
 {
@@ -40,10 +40,10 @@ public sealed class ArchitectureTests
         Assert.DoesNotContain("Shopping.Web", references);
     }
 
-    private static IReadOnlyCollection<string?> GetReferencedAssemblyNames(System.Reflection.Assembly assembly)
+    private static IReadOnlyCollection<string?> GetReferencedAssemblyNames(Assembly assembly)
     {
         return assembly.GetReferencedAssemblies()
-            .Select(reference => reference.Name)
-            .ToArray();
+                       .Select(reference => reference.Name)
+                       .ToArray();
     }
 }

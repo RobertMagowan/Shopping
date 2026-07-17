@@ -1,15 +1,16 @@
+@using Shopping.Web.Components.Pages
 <CascadingAuthenticationState>
-    <Router AppAssembly="typeof(Program).Assembly" NotFoundPage="typeof(Pages.NotFound)">
+    <Router AppAssembly="typeof(Program).Assembly" NotFoundPage="typeof(NotFound)">
         <Found Context="routeData">
-            <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
+            <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(MainLayout)">
                 <NotAuthorized>
-                    <LayoutView Layout="typeof(Layout.MainLayout)">
+                    <LayoutView Layout="typeof(MainLayout)">
                         <h1>Access denied</h1>
                         <p>You do not have permission to view this page.</p>
                     </LayoutView>
                 </NotAuthorized>
             </AuthorizeRouteView>
-            <FocusOnNavigate RouteData="routeData" Selector="h1" />
+            <FocusOnNavigate RouteData="routeData" Selector="h1"/>
         </Found>
     </Router>
 </CascadingAuthenticationState>

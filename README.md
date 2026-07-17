@@ -123,3 +123,7 @@ Authorization: Bearer <access-token-for-Shopping.Api>
 ```
 
 The API scope must match the delegated scope you expose manually on the `Shopping.Api` app registration, typically `api://<api-app-client-id>/access_as_user`.
+
+## Deployment bootstrap
+
+For the step-by-step Azure, GitHub, and External ID setup, see the [Shopping Environment Bootstrap Playbook](docs/bootstrap.md).

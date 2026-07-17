@@ -1,8 +1,8 @@
+namespace Shopping.Infrastructure.Persistence.Configurations;
+
+using Domain.Catalog;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
-using Shopping.Domain.Catalog;
-
-namespace Shopping.Infrastructure.Persistence.Configurations;
 
 public sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
 {

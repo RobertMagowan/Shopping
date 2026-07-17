@@ -1,14 +1,14 @@
-using Microsoft.EntityFrameworkCore;
-using Shopping.Domain.Catalog;
-using Shopping.Infrastructure.Persistence.Configurations;
-
 namespace Shopping.Infrastructure.Persistence;
+
+using Configurations;
+using Domain.Catalog;
+using Microsoft.EntityFrameworkCore;
 
 public sealed class ShoppingDbContext(DbContextOptions<ShoppingDbContext> options) : DbContext(options)
 {
-    public DbSet<Product> Products => Set<Product>();
+    public DbSet<Product> Products { get => Set<Product>(); }
 
-    public DbSet<ProductImage> ProductImages => Set<ProductImage>();
+    public DbSet<ProductImage> ProductImages { get => Set<ProductImage>(); }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

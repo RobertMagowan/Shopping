@@ -1,8 +1,8 @@
+namespace Shopping.Api.Controllers;
+
+using Contracts.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Shopping.Contracts.Security;
-
-namespace Shopping.Api.Controllers;
 
 [ApiController]
 [Route("api/cart")]
@@ -10,14 +10,7 @@ namespace Shopping.Api.Controllers;
 public sealed class CartController : ControllerBase
 {
     [HttpPost("items")]
-    public IActionResult AddItem(AddCartItemRequest request)
-    {
-        return Accepted(new
-        {
-            request.ProductId,
-            request.Quantity
-        });
-    }
+    public IActionResult AddItem(AddCartItemRequest request) { return Accepted(new { request.ProductId, request.Quantity }); }
 }
 
 public sealed record AddCartItemRequest(string ProductId, int Quantity);

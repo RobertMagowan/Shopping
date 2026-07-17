@@ -1,6 +1,6 @@
-using Shopping.Domain.Catalog;
-
 namespace Shopping.Infrastructure.Persistence.Configurations;
+
+using Domain.Catalog;
 
 internal static class CatalogSeedData
 {
@@ -38,12 +38,11 @@ internal static class CatalogSeedData
         CreateImageSeed("gift-card", "Gift Card")
     ];
 
-    private static Product CreateProduct(
-        string id,
-        string name,
-        string description,
-        decimal priceAmount,
-        int stockQuantity)
+    private static Product CreateProduct(string id,
+                                         string name,
+                                         string description,
+                                         decimal priceAmount,
+                                         int stockQuantity)
     {
         return new Product
         {

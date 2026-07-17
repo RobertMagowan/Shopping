@@ -1,6 +1,6 @@
-using System.Net;
-
 namespace Shopping.Infrastructure.Storage;
+
+using System.Net;
 
 internal static class ProductImageBlobSeedData
 {
@@ -25,15 +25,15 @@ internal static class ProductImageBlobSeedData
         var productName = WebUtility.HtmlEncode(seed.ProductName);
 
         return $$"""
-            <svg xmlns="http://www.w3.org/2000/svg" width="640" height="420" viewBox="0 0 640 420" role="img" aria-label="{{productName}}">
-              <rect width="640" height="420" fill="{{seed.Background}}"/>
-              <rect x="54" y="54" width="532" height="312" rx="18" fill="#ffffff" opacity="0.82"/>
-              <circle cx="160" cy="162" r="62" fill="{{seed.Accent}}" opacity="0.92"/>
-              <rect x="250" y="132" width="248" height="18" rx="9" fill="{{seed.Accent}}" opacity="0.72"/>
-              <rect x="250" y="172" width="190" height="14" rx="7" fill="{{seed.Accent}}" opacity="0.42"/>
-              <rect x="250" y="204" width="220" height="14" rx="7" fill="{{seed.Accent}}" opacity="0.30"/>
-              <text x="54" y="394" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="700" fill="#1f2933">{{productName}}</text>
-            </svg>
-            """;
+                 <svg xmlns="http://www.w3.org/2000/svg" width="640" height="420" viewBox="0 0 640 420" role="img" aria-label="{{productName}}">
+                   <rect width="640" height="420" fill="{{seed.Background}}"/>
+                   <rect x="54" y="54" width="532" height="312" rx="18" fill="#ffffff" opacity="0.82"/>
+                   <circle cx="160" cy="162" r="62" fill="{{seed.Accent}}" opacity="0.92"/>
+                   <rect x="250" y="132" width="248" height="18" rx="9" fill="{{seed.Accent}}" opacity="0.72"/>
+                   <rect x="250" y="172" width="190" height="14" rx="7" fill="{{seed.Accent}}" opacity="0.42"/>
+                   <rect x="250" y="204" width="220" height="14" rx="7" fill="{{seed.Accent}}" opacity="0.30"/>
+                   <text x="54" y="394" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="700" fill="#1f2933">{{productName}}</text>
+                 </svg>
+                 """;
     }
 }

@@ -1,13 +1,13 @@
-using Microsoft.Extensions.DependencyInjection;
-using Shopping.Application.Catalog;
-
 namespace Shopping.Application;
+
+using Catalog;
+using Microsoft.Extensions.DependencyInjection;
 
 public static class DependencyInjection
 {
     public static IServiceCollection AddShoppingApplication(this IServiceCollection services)
     {
-        services.AddScoped<IGetPublishedProductsQuery, GetPublishedProductsQuery>();
+        services.AddScoped<IGetPublishedProductsQueryHandler, GetPublishedProductsQueryHandler>();
         return services;
     }
 }

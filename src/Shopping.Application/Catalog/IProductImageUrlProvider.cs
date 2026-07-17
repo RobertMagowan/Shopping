@@ -2,5 +2,6 @@ namespace Shopping.Application.Catalog;
 
 public interface IProductImageUrlProvider
 {
-    string? GetImageUrl(string? blobName);
+    Task<string?> GetImageUrlAsync(string? blobName,
+                                   CancellationToken cancellationToken);
 }
