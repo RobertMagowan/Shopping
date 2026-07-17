@@ -2,7 +2,7 @@
 
 This folder contains Azure infrastructure definitions for the Shopping application.
 
-For the complete setup, including Azure app registrations, GitHub OIDC, GitHub Environments, branch protection, and required tools, see the [Shopping Environment Bootstrap Playbook](../docs/bootstrap.md).
+For one-time Azure, GitHub, and External ID setup, see the [Shopping Environment Bootstrap Playbook](../docs/bootstrap.md). For recurring deployment and environment operations, see the [Shopping CI/CD Deployment Playbook](../docs/deployment-playbook.md).
 
 ## Deployment Model
 
@@ -80,6 +80,8 @@ enableFrontDoorImageDelivery: true
 
 Production application deployment requires a Linux self-hosted GitHub runner carrying the labels `self-hosted`, `linux`, and `shopping-prod`. It must have Docker, outbound GitHub access, and private DNS/network access to ACR, Azure SQL, and the App Service private endpoints. Do not disable private ingress merely to use a hosted runner.
 
+When private endpoints are enabled, both App Services route application traffic and container image pulls through VNet integration. The Web and API runtime images enable ASP.NET Core forwarded headers so HTTPS redirection observes the original scheme after App Service TLS termination.
+
 Production image delivery uses Azure Front Door Premium:
 
 ```text
@@ -115,11 +117,14 @@ The `app` workflow:
 ## First Deployment
 
 1. Complete bootstrap and verification.
-2. Run `infra` with `operation: deploy` for `dev`. This creates ACR and the application identities.
-3. Run `app` manually for `dev` to build, migrate, and deploy the first runnable images.
-4. Confirm both health checks and customer sign-in before promoting the same commit through test and production.
+2. Merge the reviewed IaC changes to `master`.
+3. The `infra` workflow automatically creates or reconciles the development resources.
+4. After `infra` succeeds, the `app` workflow builds, migrates, and deploys the first runnable images.
+5. Confirm both health checks and customer sign-in before promoting the same commit through test and production.
 
 For an existing installation, reconcile the GitHub bootstrap stage before merging workflow changes that introduce new environment variables or required checks. This prevents the automatic development deployment from starting with stale GitHub configuration.
+
+See the [Shopping CI/CD Deployment Playbook](../docs/deployment-playbook.md) for promotion, rollback, failure recovery, and teardown procedures.
 
 Use `what-if` output as the reviewable deployment plan before approving production changes.
 

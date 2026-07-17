@@ -89,7 +89,7 @@ Copy-Item .\scripts\bootstrap.config.example.psd1 `
           .\scripts\bootstrap.config.psd1
 ```
 
-Replace every placeholder. The file is ignored by Git and contains no secrets. `ExternalId.WebRedirectUris` contains local or other fixed callbacks. Bootstrap deterministically generates a resource suffix for each environment and adds the future `azurewebsites.net/signin-oidc` callback before deployment. The same suffix is stored in the matching GitHub environment and supplied to Bicep as `RESOURCE_SUFFIX`, so Entra and Azure use the same hostname on the first deployment.
+Replace every placeholder. The file is ignored by Git and contains no secrets. `ExternalId.WebRedirectUris` contains local or other fixed callbacks. Bootstrap deterministically generates a resource suffix for each environment and adds the future `azurewebsites.net/signin-oidc` callback before deployment. The same suffix is stored in the matching GitHub environment and supplied to Bicep as `RESOURCE_SUFFIX`, so Entra and Azure use the same hostname on the first deployment. Bicep also retains this suffix in globally named resources such as ACR, Storage, and Key Vault to keep installations and environments distinct.
 
 `InstanceName` identifies one installation. Leave it empty to derive a stable Azure-safe value from the canonical GitHub owner/repository, or set a deliberate value such as `client-a` or `interview-demo`. The resolved value is included in resource groups, tags, app-registration names, generated suffixes, GitHub environment variables, and redirect URLs. Treat one GitHub repository as one installation; use a separate repository and state file for a parallel installation because its `dev`, `test`, and `prod` GitHub environments hold installation-specific values.
 
@@ -288,6 +288,12 @@ The verifier is read-only. It checks:
 - The managed branch ruleset and exact required status checks.
 
 User-flow and identity-provider verification remains a manual result because the bootstrap identity is not granted user-flow administration permissions.
+
+## 11. Hand Off To Deployment
+
+After automated verification and the manual user-flow check pass, follow the [Shopping CI/CD Deployment Playbook](deployment-playbook.md). Merging IaC changes to `master` automatically reconciles development infrastructure and then deploys the development application.
+
+For an existing installation, run the updated GitHub bootstrap stage and verifier before merging workflow changes that introduce new environment variables, secrets, or required checks. This prevents the automatic development deployment from using stale repository configuration.
 
 ## Legacy Secret File
 
