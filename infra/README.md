@@ -2,7 +2,7 @@
 
 This folder contains Azure infrastructure definitions for the Shopping application.
 
-For the complete setup, including Azure app registrations, GitHub OIDC, GitHub Environments, branch protection, and required tools, see the [Shopping Environment Bootstrap Playbook](../docs/bootstrap.md).
+For one-time Azure, GitHub, and External ID setup, see the [Shopping Environment Bootstrap Playbook](../docs/bootstrap.md). For recurring deployment and environment operations, see the [Shopping CI/CD Deployment Playbook](../docs/deployment-playbook.md).
 
 ## Deployment Model
 
@@ -13,14 +13,15 @@ The template is tenant-neutral. A third party can deploy it into their own tenan
 The current baseline deploys:
 
 - VNet and subnets for App Gateway, APIM, App Service integration, and private endpoints.
-- `Shopping.Web` and `Shopping.Api` App Services with system-assigned managed identities.
-- App Service Plan.
+- Linux container App Services for `Shopping.Web` and `Shopping.Api`, each using a system-assigned managed identity.
+- App Service Plan with two workers in every environment and production zone redundancy.
+- Azure Container Registry with managed-identity image pulls.
 - Azure SQL server and database.
 - Storage account and `product-images` blob container.
 - Key Vault with RBAC and purge protection.
 - Azure Cache for Redis.
 - Log Analytics and workspace-based Application Insights.
-- Optional private endpoints and private DNS for App Service, SQL, Blob Storage, Key Vault, and Redis.
+- Optional private endpoints and private DNS for App Service, SQL, Blob Storage, Key Vault, Redis, and Container Registry.
 - Optional Azure Front Door Premium image endpoint with a private Blob Storage origin.
 
 APIM, Application Gateway WAF, custom domains, and certificates are intentionally left for follow-up modules because they require tenant/domain-specific choices.
@@ -67,6 +68,8 @@ ASPNETCORE_ENVIRONMENT=Dev
 
 That prevents Azure-hosted development from loading local-only `appsettings.Development.json` values. Runtime settings for deployed `dev`, `test`, and `prod` come from App Service configuration. Sensitive values, such as the Web client secret and Redis connection string, are stored in Key Vault and exposed through App Service Key Vault references.
 
+The initial infrastructure deployment configures the App Services with the non-runnable `bootstrap` image tag. This intentionally allows ACR, app identities, RBAC, networking, and SQL to exist before the first image is built. The `app` workflow replaces it with an immutable commit SHA after pushing both images.
+
 `prod` defaults to private endpoints and disabled public App Service ingress:
 
 ```text
@@ -75,7 +78,9 @@ allowPublicAppAccess: false
 enableFrontDoorImageDelivery: true
 ```
 
-Production app package deployment to private-only App Services will require a private deployment path, such as a self-hosted GitHub runner with VNet access, or an explicit temporary/public deployment strategy. Do not disable private ingress merely to make deployment convenient without documenting the risk.
+Production application deployment requires a Linux self-hosted GitHub runner carrying the labels `self-hosted`, `linux`, and `shopping-prod`. It must have Docker, outbound GitHub access, and private DNS/network access to ACR, Azure SQL, and the App Service private endpoints. Do not disable private ingress merely to use a hosted runner.
+
+When private endpoints are enabled, both App Services route application traffic and container image pulls through VNet integration. The Web and API runtime images enable ASP.NET Core forwarded headers so HTTPS redirection observes the original scheme after App Service TLS termination.
 
 Production image delivery uses Azure Front Door Premium:
 
@@ -92,11 +97,34 @@ The Front Door private endpoint connection to the Storage account may require ap
 The `infra` workflow:
 
 - builds all Bicep parameter files on pull requests and pushes to `master`,
-- deploys a selected environment only from manual workflow dispatch,
+- automatically reconciles `dev` after IaC changes reach `master`,
+- deploys `test` or `prod` only from manual workflow dispatch,
 - validates and runs `what-if` before every deployment,
 - tears down a selected environment only from manual workflow dispatch,
 - requires a typed teardown confirmation such as `destroy-dev`,
 - deletes the environment resource group during teardown.
+
+The `app` workflow:
+
+- runs automatically for `dev` after the `infra` workflow succeeds on `master`,
+- uses manual dispatch for `test` and `prod`,
+- builds Web and API images tagged with the source commit SHA,
+- pushes images to ACR using GitHub OIDC and Azure RBAC,
+- obtains a short-lived Azure SQL access token,
+- applies EF Core migrations and grants the API managed identity `db_datareader` and `db_datawriter`,
+- updates both App Services through Bicep and verifies `/healthz`.
+
+## First Deployment
+
+1. Complete bootstrap and verification.
+2. Merge the reviewed IaC changes to `master`.
+3. The `infra` workflow automatically creates or reconciles the development resources.
+4. After `infra` succeeds, the `app` workflow builds, migrates, and deploys the first runnable images.
+5. Confirm both health checks and customer sign-in before promoting the same commit through test and production.
+
+For an existing installation, reconcile the GitHub bootstrap stage before merging workflow changes that introduce new environment variables or required checks. This prevents the automatic development deployment from starting with stale GitHub configuration.
+
+See the [Shopping CI/CD Deployment Playbook](../docs/deployment-playbook.md) for promotion, rollback, failure recovery, and teardown procedures.
 
 Use `what-if` output as the reviewable deployment plan before approving production changes.
 
@@ -106,6 +134,14 @@ To deploy:
 Actions -> infra -> Run workflow
 operation: deploy
 environmentName: dev, test, or prod
+```
+
+To deploy application images manually:
+
+```text
+Actions -> app -> Run workflow
+environmentName: dev, test, or prod
+migrateDatabase: true
 ```
 
 To tear down:

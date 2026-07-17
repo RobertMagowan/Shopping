@@ -440,6 +440,17 @@ function Assert-StateValue {
     Set-ObjectPropertyValue -InputObject $StateSection -Name $Name -Value $ExpectedValue
 }
 
+function Get-RequiredGitHubStatusChecks {
+    return @(
+        "ci-build",
+        "ci-test",
+        "container-build",
+        "infra-static-validation-dev",
+        "infra-static-validation-test",
+        "infra-static-validation-prod"
+    )
+}
+
 function ConvertFrom-SecureStringValue {
     param([Security.SecureString]$SecureValue)
 

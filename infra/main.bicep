@@ -36,6 +36,12 @@ param sqlAdministratorLogin string = 'sqladminuser'
 @description('SQL administrator password used only for provisioning. Supply this from a GitHub environment secret or local secure parameter.')
 param sqlAdministratorPassword string
 
+@description('Object ID of the GitHub OIDC deployment service principal used for deployment data-plane access.')
+param deploymentPrincipalObjectId string
+
+@description('Display name recorded for the Azure SQL Entra administrator.')
+param sqlEntraAdministratorLogin string = 'shopping-github-deploy'
+
 @description('Deploy private endpoints and private DNS for supported PaaS resources.')
 param enablePrivateEndpoints bool = false
 
@@ -45,8 +51,25 @@ param allowPublicAppAccess bool = true
 @description('App Service Plan SKU name.')
 param appServicePlanSkuName string = environmentName == 'prod' ? 'P1v3' : 'B1'
 
+@description('Number of App Service Plan workers shared by the Web and API apps.')
+@minValue(2)
+@maxValue(30)
+param appServicePlanInstanceCount int = 2
+
+@description('Azure Container Registry SKU. Premium is required when private endpoints are enabled.')
+@allowed([
+  'Basic'
+  'Premium'
+])
+param containerRegistrySkuName string = environmentName == 'prod' ? 'Premium' : 'Basic'
+
+@description('Immutable container image tag deployed to both Web and API App Services.')
+@minLength(1)
+@maxLength(128)
+param containerImageTag string = 'bootstrap'
+
 @description('Azure SQL database SKU name.')
-param sqlDatabaseSkuName string = environmentName == 'prod' ? 'S1' : 'Basic'
+param sqlDatabaseSkuName string = environmentName == 'prod' ? 'GP_Gen5_2' : 'Basic'
 
 @description('Azure Cache for Redis SKU name.')
 @allowed([
@@ -118,15 +141,19 @@ module environmentResources 'modules/environment.bicep' = {
   scope: environmentResourceGroup
   params: {
     workloadName: workloadName
-    deploymentInstance: deploymentInstance
     environmentName: environmentName
     location: location
     resourceSuffix: resourceSuffix
     sqlAdministratorLogin: sqlAdministratorLogin
     sqlAdministratorPassword: sqlAdministratorPassword
+    deploymentPrincipalObjectId: deploymentPrincipalObjectId
+    sqlEntraAdministratorLogin: sqlEntraAdministratorLogin
     enablePrivateEndpoints: enablePrivateEndpoints
     allowPublicAppAccess: allowPublicAppAccess
     appServicePlanSkuName: appServicePlanSkuName
+    appServicePlanInstanceCount: appServicePlanInstanceCount
+    containerRegistrySkuName: containerRegistrySkuName
+    containerImageTag: containerImageTag
     sqlDatabaseSkuName: sqlDatabaseSkuName
     redisSkuName: redisSkuName
     redisSkuFamily: redisSkuFamily
@@ -152,5 +179,10 @@ output webAppName string = environmentResources.outputs.webAppName
 output webAppDefaultHostName string = environmentResources.outputs.webAppDefaultHostName
 output webRedirectUri string = environmentResources.outputs.webRedirectUri
 output apiAppName string = environmentResources.outputs.apiAppName
+output apiAppPrincipalId string = environmentResources.outputs.apiAppPrincipalId
+output containerRegistryName string = environmentResources.outputs.containerRegistryName
+output containerRegistryLoginServer string = environmentResources.outputs.containerRegistryLoginServer
 output keyVaultName string = environmentResources.outputs.keyVaultName
 output storageAccountName string = environmentResources.outputs.storageAccountName
+output sqlServerFullyQualifiedDomainName string = environmentResources.outputs.sqlServerFullyQualifiedDomainName
+output sqlDatabaseName string = environmentResources.outputs.sqlDatabaseName

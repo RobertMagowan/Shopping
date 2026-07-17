@@ -1,0 +1,262 @@
+name: app
+
+on:
+  workflow_run:
+    workflows:
+      - infra
+    types:
+      - completed
+    branches:
+      - master
+  workflow_dispatch:
+    inputs:
+      environmentName:
+        description: Environment to deploy.
+        required: true
+        type: choice
+        default: dev
+        options:
+          - dev
+          - test
+          - prod
+      migrateDatabase:
+        description: Apply EF Core migrations and API database permissions.
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  deployment-target:
+    name: app-deployment-target
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success') }}
+    runs-on: ubuntu-latest
+    outputs:
+      environmentName: ${{ steps.target.outputs.environmentName }}
+      migrateDatabase: ${{ steps.target.outputs.migrateDatabase }}
+      runner: ${{ steps.target.outputs.runner }}
+      sourceSha: ${{ steps.target.outputs.sourceSha }}
+    steps:
+      - name: Resolve deployment target
+        id: target
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            environment_name=dev
+            source_sha="${{ github.event.workflow_run.head_sha }}"
+            migrate_database=true
+          else
+            environment_name="${{ inputs.environmentName }}"
+            source_sha="${{ github.sha }}"
+            migrate_database="${{ inputs.migrateDatabase }}"
+          fi
+
+          if [ "$environment_name" = "prod" ]; then
+            runner='["self-hosted","linux","shopping-prod"]'
+          else
+            runner='"ubuntu-latest"'
+          fi
+
+          {
+            echo "environmentName=$environment_name"
+            echo "migrateDatabase=$migrate_database"
+            echo "runner=$runner"
+            echo "sourceSha=$source_sha"
+          } >> "$GITHUB_OUTPUT"
+
+  deploy:
+    name: app-deploy-${{ needs.deployment-target.outputs.environmentName }}
+    needs: deployment-target
+    runs-on: ${{ fromJSON(needs.deployment-target.outputs.runner) }}
+    environment: ${{ needs.deployment-target.outputs.environmentName }}
+    concurrency:
+      group: app-deploy-${{ needs.deployment-target.outputs.environmentName }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ENVIRONMENT_NAME: ${{ needs.deployment-target.outputs.environmentName }}
+      SOURCE_SHA: ${{ needs.deployment-target.outputs.sourceSha }}
+      AZURE_LOCATION: uksouth
+      WORKLOAD_NAME: ${{ vars.WORKLOAD_NAME }}
+      DEPLOYMENT_INSTANCE: ${{ vars.DEPLOYMENT_INSTANCE }}
+      RESOURCE_SUFFIX: ${{ vars.RESOURCE_SUFFIX }}
+      PARAMETER_FILE: infra/parameters/${{ needs.deployment-target.outputs.environmentName }}.bicepparam
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_PRINCIPAL_OBJECT_ID: ${{ vars.AZURE_PRINCIPAL_OBJECT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      SQL_ADMINISTRATOR_LOGIN: ${{ vars.SQL_ADMINISTRATOR_LOGIN }}
+      SQL_ADMINISTRATOR_PASSWORD: ${{ secrets.SQL_ADMINISTRATOR_PASSWORD }}
+      ENTRA_EXTERNAL_ID_INSTANCE: ${{ vars.ENTRA_EXTERNAL_ID_INSTANCE }}
+      ENTRA_EXTERNAL_ID_DOMAIN: ${{ vars.ENTRA_EXTERNAL_ID_DOMAIN }}
+      ENTRA_EXTERNAL_ID_TENANT_ID: ${{ vars.ENTRA_EXTERNAL_ID_TENANT_ID }}
+      ENTRA_EXTERNAL_ID_WEB_CLIENT_ID: ${{ vars.ENTRA_EXTERNAL_ID_WEB_CLIENT_ID }}
+      ENTRA_EXTERNAL_ID_WEB_CLIENT_SECRET: ${{ secrets.ENTRA_EXTERNAL_ID_WEB_CLIENT_SECRET }}
+      ENTRA_EXTERNAL_ID_API_CLIENT_ID: ${{ vars.ENTRA_EXTERNAL_ID_API_CLIENT_ID }}
+      ENTRA_EXTERNAL_ID_API_AUDIENCE: ${{ vars.ENTRA_EXTERNAL_ID_API_AUDIENCE }}
+      SHOPPING_API_SCOPE: ${{ vars.SHOPPING_API_SCOPE }}
+      CONTAINER_IMAGE_TAG: ${{ needs.deployment-target.outputs.sourceSha }}
+
+    steps:
+      - name: Checkout deployment revision
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+
+      - name: Ensure deployment configuration is present
+        shell: bash
+        run: |
+          required=(
+            AZURE_CLIENT_ID
+            AZURE_PRINCIPAL_OBJECT_ID
+            AZURE_TENANT_ID
+            AZURE_SUBSCRIPTION_ID
+            WORKLOAD_NAME
+            DEPLOYMENT_INSTANCE
+            RESOURCE_SUFFIX
+            SQL_ADMINISTRATOR_LOGIN
+            SQL_ADMINISTRATOR_PASSWORD
+            ENTRA_EXTERNAL_ID_INSTANCE
+            ENTRA_EXTERNAL_ID_DOMAIN
+            ENTRA_EXTERNAL_ID_TENANT_ID
+            ENTRA_EXTERNAL_ID_WEB_CLIENT_ID
+            ENTRA_EXTERNAL_ID_WEB_CLIENT_SECRET
+            ENTRA_EXTERNAL_ID_API_CLIENT_ID
+            ENTRA_EXTERNAL_ID_API_AUDIENCE
+            SHOPPING_API_SCOPE
+          )
+
+          for name in "${required[@]}"; do
+            if [ -z "${!name}" ]; then
+              echo "$name must be configured on the GitHub Environment before deployment."
+              exit 1
+            fi
+          done
+
+      - name: Azure login
+        uses: azure/login@v3
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve Azure resources
+        shell: bash
+        run: |
+          resource_group="rg-${WORKLOAD_NAME}-${DEPLOYMENT_INSTANCE}-${ENVIRONMENT_NAME}-${AZURE_LOCATION}"
+          registry_name=$(az acr list --resource-group "$resource_group" --query "[0].name" --output tsv)
+
+          if [ -z "$registry_name" ]; then
+            echo "No container registry exists in '$resource_group'. Deploy infrastructure first."
+            exit 1
+          fi
+
+          registry_server=$(az acr show --name "$registry_name" --query loginServer --output tsv)
+          {
+            echo "RESOURCE_GROUP=$resource_group"
+            echo "CONTAINER_REGISTRY_NAME=$registry_name"
+            echo "CONTAINER_REGISTRY_SERVER=$registry_server"
+            echo "WEB_APP_NAME=app-${WORKLOAD_NAME}-web-${ENVIRONMENT_NAME}-${RESOURCE_SUFFIX}"
+            echo "API_APP_NAME=app-${WORKLOAD_NAME}-api-${ENVIRONMENT_NAME}-${RESOURCE_SUFFIX}"
+            echo "SQL_SERVER_NAME=sql-${WORKLOAD_NAME}-${ENVIRONMENT_NAME}-${RESOURCE_SUFFIX}"
+            echo "SQL_DATABASE_NAME=sqldb-${WORKLOAD_NAME}-${ENVIRONMENT_NAME}"
+          } >> "$GITHUB_ENV"
+
+      - name: Sign in to container registry
+        run: az acr login --name "$CONTAINER_REGISTRY_NAME"
+
+      - name: Build and push immutable images
+        shell: bash
+        run: |
+          web_image="${CONTAINER_REGISTRY_SERVER}/shopping-web:${SOURCE_SHA}"
+          api_image="${CONTAINER_REGISTRY_SERVER}/shopping-api:${SOURCE_SHA}"
+
+          docker build --file src/Shopping.Web/Dockerfile --tag "$web_image" .
+          docker build --file src/Shopping.Api/Dockerfile --tag "$api_image" .
+          docker push "$web_image"
+          docker push "$api_image"
+
+      - name: Set up .NET
+        if: ${{ needs.deployment-target.outputs.migrateDatabase == 'true' }}
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Open temporary SQL firewall rule
+        if: ${{ needs.deployment-target.outputs.migrateDatabase == 'true' && needs.deployment-target.outputs.environmentName != 'prod' }}
+        shell: bash
+        run: |
+          runner_ip=$(curl --fail --silent --show-error https://api.ipify.org)
+          firewall_rule="github-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          az sql server firewall-rule create \
+            --resource-group "$RESOURCE_GROUP" \
+            --server "$SQL_SERVER_NAME" \
+            --name "$firewall_rule" \
+            --start-ip-address "$runner_ip" \
+            --end-ip-address "$runner_ip"
+          echo "SQL_FIREWALL_RULE=$firewall_rule" >> "$GITHUB_ENV"
+
+      - name: Apply database migrations and runtime permissions
+        if: ${{ needs.deployment-target.outputs.migrateDatabase == 'true' }}
+        shell: bash
+        run: |
+          api_principal_id=$(az webapp identity show \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$API_APP_NAME" \
+            --query principalId \
+            --output tsv)
+          sql_server_fqdn=$(az sql server show \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$SQL_SERVER_NAME" \
+            --query fullyQualifiedDomainName \
+            --output tsv)
+          sql_access_token=$(az account get-access-token \
+            --resource https://database.windows.net/ \
+            --query accessToken \
+            --output tsv)
+          echo "::add-mask::$sql_access_token"
+          connection_string="Server=tcp:${sql_server_fqdn},1433;Database=${SQL_DATABASE_NAME};Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;"
+
+          ConnectionStrings__ShoppingDatabase="$connection_string" \
+          AZURE_SQL_ACCESS_TOKEN="$sql_access_token" \
+          SHOPPING_API_PRINCIPAL_ID="$api_principal_id" \
+          SHOPPING_API_PRINCIPAL_NAME="$API_APP_NAME" \
+          dotnet run \
+            --project tools/Shopping.DatabaseMigrator/Shopping.DatabaseMigrator.csproj \
+            --configuration Release
+
+      - name: Remove temporary SQL firewall rule
+        if: ${{ always() && needs.deployment-target.outputs.migrateDatabase == 'true' && needs.deployment-target.outputs.environmentName != 'prod' }}
+        shell: bash
+        run: |
+          if [ -n "${SQL_FIREWALL_RULE:-}" ]; then
+            az sql server firewall-rule delete \
+              --resource-group "$RESOURCE_GROUP" \
+              --server "$SQL_SERVER_NAME" \
+              --name "$SQL_FIREWALL_RULE"
+          fi
+
+      - name: Deploy immutable image tag
+        shell: bash
+        run: |
+          deployment_name="shopping-app-${ENVIRONMENT_NAME}-${GITHUB_RUN_NUMBER}"
+          az deployment sub create \
+            --name "$deployment_name" \
+            --location "$AZURE_LOCATION" \
+            --parameters "$PARAMETER_FILE"
+
+      - name: Verify container health
+        shell: bash
+        run: |
+          curl --fail --retry 20 --retry-delay 15 --retry-all-errors "https://${API_APP_NAME}.azurewebsites.net/healthz"
+          curl --fail --retry 20 --retry-delay 15 --retry-all-errors "https://${WEB_APP_NAME}.azurewebsites.net/healthz"
+
+          {
+            echo "### Application deployment"
+            printf "Environment: \`%s\`\n" "$ENVIRONMENT_NAME"
+            printf "Image tag: \`%s\`\n" "$SOURCE_SHA"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -89,7 +89,7 @@ Copy-Item .\scripts\bootstrap.config.example.psd1 `
           .\scripts\bootstrap.config.psd1
 ```
 
-Replace every placeholder. The file is ignored by Git and contains no secrets. `ExternalId.WebRedirectUris` contains local or other fixed callbacks. Bootstrap deterministically generates a resource suffix for each environment and adds the future `azurewebsites.net/signin-oidc` callback before deployment. The same suffix is stored in the matching GitHub environment and supplied to Bicep as `RESOURCE_SUFFIX`, so Entra and Azure use the same hostname on the first deployment.
+Replace every placeholder. The file is ignored by Git and contains no secrets. `ExternalId.WebRedirectUris` contains local or other fixed callbacks. Bootstrap deterministically generates a resource suffix for each environment and adds the future `azurewebsites.net/signin-oidc` callback before deployment. The same suffix is stored in the matching GitHub environment and supplied to Bicep as `RESOURCE_SUFFIX`, so Entra and Azure use the same hostname on the first deployment. Bicep also retains this suffix in globally named resources such as ACR, Storage, and Key Vault to keep installations and environments distinct.
 
 `InstanceName` identifies one installation. Leave it empty to derive a stable Azure-safe value from the canonical GitHub owner/repository, or set a deliberate value such as `client-a` or `interview-demo`. The resolved value is included in resource groups, tags, app-registration names, generated suffixes, GitHub environment variables, and redirect URLs. Treat one GitHub repository as one installation; use a separate repository and state file for a parallel installation because its `dev`, `test`, and `prod` GitHub environments hold installation-specific values.
 
@@ -236,7 +236,7 @@ Secrets are piped directly to `gh secret set`. They are not included in command-
 
 GitHub receives:
 
-- Environment variables for Azure OIDC, External ID, `WORKLOAD_NAME`, `DEPLOYMENT_INSTANCE`, and the environment-specific `RESOURCE_SUFFIX`.
+- Environment variables for Azure OIDC, the deployment principal object ID, External ID, `WORKLOAD_NAME`, `DEPLOYMENT_INSTANCE`, and the environment-specific `RESOURCE_SUFFIX`.
 - Environment secrets for SQL provisioning and the Web client credential.
 - No deployment approval for dev or test.
 - Required reviewer approval for production.
@@ -253,7 +253,7 @@ Only after `ci.yml`, `infra.yml`, and `codeql.yml` exist on the default branch, 
   -ConfigureRuleset
 ```
 
-The script manages only the exactly named ruleset from configuration. If another ruleset already protects the branch, it stops and requires explicit adoption by name.
+The script manages only the exactly named ruleset from configuration. It requires build, test, container-build, and all environment-specific IaC validation checks. If another ruleset already protects the branch, it stops and requires explicit adoption by name.
 
 ## 9. Complete Manual External ID Steps
 
@@ -267,6 +267,8 @@ In the Entra admin center:
 When a custom domain or public gateway origin changes, update `ExternalId.PublicWebBaseUrls` and rerun `-Stage ExternalId`. Do not add the callback only in the portal because the script intentionally replaces the complete redirect URI list.
 
 The current production Bicep parameters make the App Services private, while the Application Gateway module is still pending. The generated direct App Service callback is deterministic but is not a public production entry point. Configure and deploy the public ingress, set `ExternalId.PublicWebBaseUrls.prod`, and rerun the External ID stage before testing production sign-in.
+
+Production image deployment also requires a VNet-connected Linux self-hosted GitHub runner labelled `self-hosted`, `linux`, and `shopping-prod`. The runner needs Docker plus private access to ACR, Azure SQL, and App Service. Hosted runners are used for dev and test, with temporary SQL firewall rules removed after migration.
 
 ## 10. Verify
 
@@ -283,9 +285,15 @@ The verifier is read-only. It checks:
 - Optional bootstrap Admin assignments.
 - GitHub environment variables, deterministic resource suffixes, and secret presence.
 - Production reviewer and branch restrictions.
-- The managed branch ruleset.
+- The managed branch ruleset and exact required status checks.
 
 User-flow and identity-provider verification remains a manual result because the bootstrap identity is not granted user-flow administration permissions.
+
+## 11. Hand Off To Deployment
+
+After automated verification and the manual user-flow check pass, follow the [Shopping CI/CD Deployment Playbook](deployment-playbook.md). Merging IaC changes to `master` automatically reconciles development infrastructure and then deploys the development application.
+
+For an existing installation, run the updated GitHub bootstrap stage and verifier before merging workflow changes that introduce new environment variables, secrets, or required checks. This prevents the automatic development deployment from using stale repository configuration.
 
 ## Legacy Secret File
 

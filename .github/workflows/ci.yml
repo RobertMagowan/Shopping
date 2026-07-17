@@ -62,3 +62,16 @@ jobs:
           path: TestResults/**/*.trx
           if-no-files-found: ignore
           retention-days: 14
+
+  container-build:
+    name: container-build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Build Web image
+        run: docker build --file src/Shopping.Web/Dockerfile --tag shopping-web:validation .
+
+      - name: Build API image
+        run: docker build --file src/Shopping.Api/Dockerfile --tag shopping-api:validation .
