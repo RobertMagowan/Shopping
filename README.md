@@ -127,3 +127,5 @@ The API scope must match the delegated scope you expose manually on the `Shoppin
 ## Deployment bootstrap
 
 For the step-by-step Azure, GitHub, and External ID setup, see the [Shopping Environment Bootstrap Playbook](docs/bootstrap.md).
+
+Azure deployment uses Linux containers in Azure Container Registry. Bicep provisions two App Service workers, managed-identity ACR pulls, Azure SQL, Redis, Blob Storage, Key Vault, monitoring, and environment networking. The `app` workflow builds immutable Web/API images, applies EF migrations with an OIDC-issued SQL token, and verifies container health. See [infra/README.md](infra/README.md) for deployment order and production runner requirements.

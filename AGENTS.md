@@ -165,3 +165,7 @@ Use `-PromptForExternalIdValues` only for operator-driven bootstrap runs. CI and
 Do not independently change the App Service resource suffix algorithm in PowerShell, GitHub configuration, or Bicep. Bootstrap-generated `RESOURCE_SUFFIX` values make deployed hostnames and Entra redirect URIs deterministic before first deployment; update and verify all three locations together.
 
 Treat the resolved deployment instance as immutable after infrastructure is created. Each repository installation needs a distinct `InstanceName` within a shared Azure subscription; changing it changes resource-group and global resource identities.
+
+Deploy Web and API images with immutable commit-SHA tags through `.github/workflows/app.yml`; do not introduce mutable `latest` tags. Keep ACR credentials disabled and use App Service managed identities with `AcrPull`.
+
+Do not run EF Core migrations during API startup. Use `tools/Shopping.DatabaseMigrator` from the deployment workflow with a short-lived Azure SQL token. Production migrations and image pushes must run from the VNet-connected `shopping-prod` self-hosted runner.

@@ -483,6 +483,7 @@ if ($runGitHub) {
 
     $environmentVariables = @{
         AZURE_CLIENT_ID = $azureState.deploymentApplicationClientId
+        AZURE_PRINCIPAL_OBJECT_ID = $azureState.deploymentServicePrincipalObjectId
         AZURE_TENANT_ID = $azureState.tenantId
         AZURE_SUBSCRIPTION_ID = $azureState.subscriptionId
         WORKLOAD_NAME = $config.WorkloadName

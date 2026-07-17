@@ -243,11 +243,8 @@ function Set-BranchRuleset {
                 do_not_enforce_on_create = $false
                 strict_required_status_checks_policy = $true
                 required_status_checks = @(
-                    @{ context = "ci-build" },
-                    @{ context = "ci-test" },
-                    @{ context = "infra-static-validation-dev" },
-                    @{ context = "infra-static-validation-test" },
-                    @{ context = "infra-static-validation-prod" }
+                    Get-RequiredGitHubStatusChecks |
+                        ForEach-Object { @{ context = $_ } }
                 )
             }
         },

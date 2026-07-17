@@ -1,18 +1,22 @@
 targetScope = 'resourceGroup'
 
 @description('Short workload name used as the resource naming prefix.')
+@minLength(2)
 param workloadName string
 
 @description('Stable installation name used for names and tags.')
+@minLength(2)
 param deploymentInstance string
 
 @description('Short environment name used for resource naming and tagging.')
+@minLength(2)
 param environmentName string
 
 @description('Azure region for the environment.')
 param location string
 
 @description('Deterministic resource suffix supplied by bootstrap.')
+@minLength(4)
 param resourceSuffix string
 
 @description('SQL administrator login used only for provisioning.')
@@ -22,6 +26,12 @@ param sqlAdministratorLogin string
 @description('SQL administrator password used only for provisioning.')
 param sqlAdministratorPassword string
 
+@description('Object ID of the service principal used for deployment data-plane access.')
+param deploymentPrincipalObjectId string
+
+@description('Display name recorded for the Azure SQL Entra administrator.')
+param sqlEntraAdministratorLogin string
+
 @description('Deploy private endpoints and private DNS for supported PaaS resources.')
 param enablePrivateEndpoints bool
 
@@ -30,6 +40,15 @@ param allowPublicAppAccess bool
 
 @description('App Service Plan SKU name.')
 param appServicePlanSkuName string
+
+@description('Number of App Service Plan workers shared by the Web and API apps.')
+param appServicePlanInstanceCount int
+
+@description('Azure Container Registry SKU name.')
+param containerRegistrySkuName string
+
+@description('Immutable container image tag deployed to the Web and API apps.')
+param containerImageTag string
 
 @description('Azure SQL database SKU name.')
 param sqlDatabaseSkuName string
@@ -82,11 +101,12 @@ var compactName = toLower(replace('${workloadName}${deploymentInstance}${environ
 var webAppName = 'app-${workloadName}-web-${environmentName}-${suffix}'
 var apiAppName = 'app-${workloadName}-api-${environmentName}-${suffix}'
 var appServicePlanName = 'asp-${workloadName}-${environmentName}-${suffix}'
+var containerRegistryName = take('acr${compactName}${suffix}', 50)
 var logAnalyticsName = 'log-${workloadName}-${environmentName}-${suffix}'
 var appInsightsName = 'appi-${workloadName}-${environmentName}-${suffix}'
 var vnetName = 'vnet-${workloadName}-${environmentName}-${suffix}'
 var keyVaultName = take('kv-${compactName}-${suffix}', 24)
-var storageAccountName = take('${compactName}${suffix}', 24)
+var storageAccountName = take('st${compactName}${suffix}', 24)
 var sqlServerName = 'sql-${workloadName}-${environmentName}-${suffix}'
 var sqlDatabaseName = 'sqldb-${workloadName}-${environmentName}'
 var redisName = 'redis-${workloadName}-${environmentName}-${suffix}'
@@ -110,6 +130,7 @@ var privateDnsZoneNames = [
   sqlPrivateDnsZoneName
   'privatelink.vaultcore.azure.net'
   'privatelink.redis.cache.windows.net'
+  'privatelink.azurecr.io'
 ]
 
 var appServiceIntegrationSubnetName = 'snet-appservice-integration'
@@ -204,11 +225,30 @@ resource appServicePlan 'Microsoft.Web/serverfarms@2024-04-01' = {
   tags: tags
   sku: {
     name: appServicePlanSkuName
+    capacity: appServicePlanInstanceCount
   }
   properties: {
-    reserved: false
+    reserved: true
     zoneRedundant: environmentName == 'prod'
   }
+}
+
+resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
+  name: containerRegistryName
+  location: location
+  tags: tags
+  sku: {
+    name: containerRegistrySkuName
+  }
+  properties: union({
+    adminUserEnabled: false
+    anonymousPullEnabled: false
+    dataEndpointEnabled: false
+    networkRuleBypassOptions: 'AzureServices'
+    publicNetworkAccess: enablePrivateEndpoints ? 'Disabled' : 'Enabled'
+  }, environmentName == 'prod' ? {
+    zoneRedundancy: 'Enabled'
+  } : {})
 }
 
 resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
@@ -370,6 +410,17 @@ resource sqlDatabase 'Microsoft.Sql/servers/databases@2023-08-01-preview' = {
   }
 }
 
+resource sqlEntraAdministrator 'Microsoft.Sql/servers/administrators@2023-08-01-preview' = {
+  parent: sqlServer
+  name: 'ActiveDirectory'
+  properties: {
+    administratorType: 'ActiveDirectory'
+    login: sqlEntraAdministratorLogin
+    sid: deploymentPrincipalObjectId
+    tenantId: tenant().tenantId
+  }
+}
+
 resource redis 'Microsoft.Cache/redis@2023-08-01' = {
   name: redisName
   location: location
@@ -398,7 +449,7 @@ resource webApp 'Microsoft.Web/sites@2024-04-01' = {
   name: webAppName
   location: location
   tags: tags
-  kind: 'app'
+  kind: 'app,linux,container'
   identity: {
     type: 'SystemAssigned'
   }
@@ -408,12 +459,19 @@ resource webApp 'Microsoft.Web/sites@2024-04-01' = {
     publicNetworkAccess: allowPublicAppAccess ? 'Enabled' : 'Disabled'
     virtualNetworkSubnetId: appServiceIntegrationSubnet.id
     siteConfig: {
-      alwaysOn: environmentName == 'prod'
+      alwaysOn: true
+      acrUseManagedIdentityCreds: true
       ftpsState: 'Disabled'
+      healthCheckPath: '/healthz'
+      http20Enabled: true
+      linuxFxVersion: 'DOCKER|${containerRegistry.properties.loginServer}/shopping-web:${containerImageTag}'
       minTlsVersion: '1.2'
       vnetRouteAllEnabled: true
-      netFrameworkVersion: 'v10.0'
       appSettings: [
+        {
+          name: 'WEBSITES_PORT'
+          value: '8080'
+        }
         {
           name: 'ASPNETCORE_ENVIRONMENT'
           value: aspNetCoreEnvironment
@@ -467,7 +525,7 @@ resource apiApp 'Microsoft.Web/sites@2024-04-01' = {
   name: apiAppName
   location: location
   tags: tags
-  kind: 'app'
+  kind: 'app,linux,container'
   identity: {
     type: 'SystemAssigned'
   }
@@ -477,12 +535,19 @@ resource apiApp 'Microsoft.Web/sites@2024-04-01' = {
     publicNetworkAccess: allowPublicAppAccess ? 'Enabled' : 'Disabled'
     virtualNetworkSubnetId: appServiceIntegrationSubnet.id
     siteConfig: {
-      alwaysOn: environmentName == 'prod'
+      alwaysOn: true
+      acrUseManagedIdentityCreds: true
       ftpsState: 'Disabled'
+      healthCheckPath: '/healthz'
+      http20Enabled: true
+      linuxFxVersion: 'DOCKER|${containerRegistry.properties.loginServer}/shopping-api:${containerImageTag}'
       minTlsVersion: '1.2'
       vnetRouteAllEnabled: true
-      netFrameworkVersion: 'v10.0'
       appSettings: [
+        {
+          name: 'WEBSITES_PORT'
+          value: '8080'
+        }
         {
           name: 'ASPNETCORE_ENVIRONMENT'
           value: aspNetCoreEnvironment
@@ -539,6 +604,46 @@ resource apiApp 'Microsoft.Web/sites@2024-04-01' = {
 resource blobDataContributorRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' existing = {
   scope: subscription()
   name: 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
+}
+
+resource acrPullRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' existing = {
+  scope: subscription()
+  name: '7f951dda-4ed3-4680-a7ca-43fe172d538d'
+}
+
+resource acrPushRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' existing = {
+  scope: subscription()
+  name: '8311e382-0749-4cb8-b61a-304f252e45ec'
+}
+
+resource deploymentAcrPushAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(containerRegistry.id, deploymentPrincipalObjectId, acrPushRole.id)
+  scope: containerRegistry
+  properties: {
+    principalId: deploymentPrincipalObjectId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: acrPushRole.id
+  }
+}
+
+resource webAcrPullAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(containerRegistry.id, webApp.id, acrPullRole.id)
+  scope: containerRegistry
+  properties: {
+    principalId: webApp.identity.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: acrPullRole.id
+  }
+}
+
+resource apiAcrPullAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(containerRegistry.id, apiApp.id, acrPullRole.id)
+  scope: containerRegistry
+  properties: {
+    principalId: apiApp.identity.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: acrPullRole.id
+  }
 }
 
 resource blobDelegatorRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' existing = {
@@ -731,6 +836,28 @@ resource redisPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = 
   }
 }
 
+resource containerRegistryPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = if (enablePrivateEndpoints) {
+  name: 'pe-${containerRegistry.name}'
+  location: location
+  tags: tags
+  properties: {
+    subnet: {
+      id: privateEndpointSubnet.id
+    }
+    privateLinkServiceConnections: [
+      {
+        name: 'registry'
+        properties: {
+          privateLinkServiceId: containerRegistry.id
+          groupIds: [
+            'registry'
+          ]
+        }
+      }
+    ]
+  }
+}
+
 resource webPrivateDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-05-01' = if (enablePrivateEndpoints) {
   parent: webPrivateEndpoint
   name: 'default'
@@ -821,13 +948,32 @@ resource redisPrivateDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDns
   }
 }
 
+resource containerRegistryPrivateDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-05-01' = if (enablePrivateEndpoints) {
+  parent: containerRegistryPrivateEndpoint
+  name: 'default'
+  properties: {
+    privateDnsZoneConfigs: [
+      {
+        name: 'registry'
+        properties: {
+          privateDnsZoneId: privateDnsZones[5].id
+        }
+      }
+    ]
+  }
+}
+
 output webAppName string = webApp.name
 output webAppDefaultHostName string = webApp.properties.defaultHostName
 output webRedirectUri string = 'https://${webApp.properties.defaultHostName}/signin-oidc'
 output apiAppName string = apiApp.name
+output apiAppPrincipalId string = apiApp.identity.principalId
+output containerRegistryName string = containerRegistry.name
+output containerRegistryLoginServer string = containerRegistry.properties.loginServer
 output keyVaultName string = keyVault.name
 output storageAccountName string = storageAccount.name
 output sqlServerName string = sqlServer.name
 output sqlDatabaseName string = sqlDatabase.name
+output sqlServerFullyQualifiedDomainName string = sqlServer.properties.fullyQualifiedDomainName
 output redisName string = redis.name
 output frontDoorImageEndpoint string = frontDoorImageEndpoint

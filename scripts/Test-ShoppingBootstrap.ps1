@@ -224,6 +224,7 @@ else {
 
 $requiredVariables = @(
     "AZURE_CLIENT_ID",
+    "AZURE_PRINCIPAL_OBJECT_ID",
     "AZURE_TENANT_ID",
     "AZURE_SUBSCRIPTION_ID",
     "WORKLOAD_NAME",
@@ -313,7 +314,19 @@ try {
     $ruleset = @($rulesets | Where-Object { $_.name -eq $config.GitHub.RulesetName })
 
     if ($ruleset.Count -eq 1 -and $ruleset[0].enforcement -eq "active") {
-        Add-VerificationResult -Area "GitHub ruleset" -Status "Pass" -Detail "Managed ruleset '$($config.GitHub.RulesetName)' is active."
+        $rulesetDetails = & gh api "repos/$canonicalRepository/rulesets/$($ruleset[0].id)" | ConvertFrom-Json
+        $requiredStatusChecksRule = @($rulesetDetails.rules | Where-Object type -eq "required_status_checks")
+        $actualStatusChecks = @($requiredStatusChecksRule.parameters.required_status_checks.context | Sort-Object)
+        $expectedStatusChecks = @(Get-RequiredGitHubStatusChecks | Sort-Object)
+        $statusChecksMatch = $requiredStatusChecksRule.Count -eq 1 -and
+                             @(Compare-Object -ReferenceObject $expectedStatusChecks -DifferenceObject $actualStatusChecks -CaseSensitive).Count -eq 0
+
+        if ($statusChecksMatch) {
+            Add-VerificationResult -Area "GitHub ruleset" -Status "Pass" -Detail "Managed ruleset and required status checks match configuration."
+        }
+        else {
+            Add-VerificationResult -Area "GitHub ruleset" -Status "Fail" -Detail "Managed ruleset required status checks differ from configuration."
+        }
     }
     else {
         Add-VerificationResult -Area "GitHub ruleset" -Status "Fail" -Detail "Managed ruleset is missing, duplicated, or inactive."

@@ -13,14 +13,15 @@ The template is tenant-neutral. A third party can deploy it into their own tenan
 The current baseline deploys:
 
 - VNet and subnets for App Gateway, APIM, App Service integration, and private endpoints.
-- `Shopping.Web` and `Shopping.Api` App Services with system-assigned managed identities.
-- App Service Plan.
+- Linux container App Services for `Shopping.Web` and `Shopping.Api`, each using a system-assigned managed identity.
+- App Service Plan with two workers in every environment and production zone redundancy.
+- Azure Container Registry with managed-identity image pulls.
 - Azure SQL server and database.
 - Storage account and `product-images` blob container.
 - Key Vault with RBAC and purge protection.
 - Azure Cache for Redis.
 - Log Analytics and workspace-based Application Insights.
-- Optional private endpoints and private DNS for App Service, SQL, Blob Storage, Key Vault, and Redis.
+- Optional private endpoints and private DNS for App Service, SQL, Blob Storage, Key Vault, Redis, and Container Registry.
 - Optional Azure Front Door Premium image endpoint with a private Blob Storage origin.
 
 APIM, Application Gateway WAF, custom domains, and certificates are intentionally left for follow-up modules because they require tenant/domain-specific choices.
@@ -67,6 +68,8 @@ ASPNETCORE_ENVIRONMENT=Dev
 
 That prevents Azure-hosted development from loading local-only `appsettings.Development.json` values. Runtime settings for deployed `dev`, `test`, and `prod` come from App Service configuration. Sensitive values, such as the Web client secret and Redis connection string, are stored in Key Vault and exposed through App Service Key Vault references.
 
+The initial infrastructure deployment configures the App Services with the non-runnable `bootstrap` image tag. This intentionally allows ACR, app identities, RBAC, networking, and SQL to exist before the first image is built. The `app` workflow replaces it with an immutable commit SHA after pushing both images.
+
 `prod` defaults to private endpoints and disabled public App Service ingress:
 
 ```text
@@ -75,7 +78,7 @@ allowPublicAppAccess: false
 enableFrontDoorImageDelivery: true
 ```
 
-Production app package deployment to private-only App Services will require a private deployment path, such as a self-hosted GitHub runner with VNet access, or an explicit temporary/public deployment strategy. Do not disable private ingress merely to make deployment convenient without documenting the risk.
+Production application deployment requires a Linux self-hosted GitHub runner carrying the labels `self-hosted`, `linux`, and `shopping-prod`. It must have Docker, outbound GitHub access, and private DNS/network access to ACR, Azure SQL, and the App Service private endpoints. Do not disable private ingress merely to use a hosted runner.
 
 Production image delivery uses Azure Front Door Premium:
 
@@ -92,11 +95,29 @@ The Front Door private endpoint connection to the Storage account may require ap
 The `infra` workflow:
 
 - builds all Bicep parameter files on pull requests and pushes to `master`,
-- deploys a selected environment only from manual workflow dispatch,
+- automatically reconciles `dev` after IaC changes reach `master`,
+- deploys `test` or `prod` only from manual workflow dispatch,
 - validates and runs `what-if` before every deployment,
 - tears down a selected environment only from manual workflow dispatch,
 - requires a typed teardown confirmation such as `destroy-dev`,
 - deletes the environment resource group during teardown.
+
+The `app` workflow:
+
+- runs automatically for `dev` after the `infra` workflow succeeds on `master`,
+- uses manual dispatch for `test` and `prod`,
+- builds Web and API images tagged with the source commit SHA,
+- pushes images to ACR using GitHub OIDC and Azure RBAC,
+- obtains a short-lived Azure SQL access token,
+- applies EF Core migrations and grants the API managed identity `db_datareader` and `db_datawriter`,
+- updates both App Services through Bicep and verifies `/healthz`.
+
+## First Deployment
+
+1. Complete bootstrap and verification.
+2. Run `infra` with `operation: deploy` for `dev`. This creates ACR and the application identities.
+3. Run `app` manually for `dev` to build, migrate, and deploy the first runnable images.
+4. Confirm both health checks and customer sign-in before promoting the same commit through test and production.
 
 Use `what-if` output as the reviewable deployment plan before approving production changes.
 
@@ -106,6 +127,14 @@ To deploy:
 Actions -> infra -> Run workflow
 operation: deploy
 environmentName: dev, test, or prod
+```
+
+To deploy application images manually:
+
+```text
+Actions -> app -> Run workflow
+environmentName: dev, test, or prod
+migrateDatabase: true
 ```
 
 To tear down:

@@ -11,4 +11,7 @@
     <Project Path="tests/Shopping.Api.Tests/Shopping.Api.Tests.csproj" />
     <Project Path="tests/Shopping.Application.Tests/Shopping.Application.Tests.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Shopping.DatabaseMigrator/Shopping.DatabaseMigrator.csproj" />
+  </Folder>
 </Solution>

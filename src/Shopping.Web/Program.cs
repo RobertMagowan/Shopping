@@ -61,6 +61,7 @@ builder.Services.AddHttpClient("ShoppingApi.Public", client =>
 });
 
 builder.Services.AddScoped<ShoppingApiClient>();
+builder.Services.AddHealthChecks();
 
 builder.Services.AddRazorComponents()
        .AddInteractiveServerComponents();
@@ -81,6 +82,7 @@ app.UseAuthorization();
 app.UseAntiforgery();
 
 app.MapStaticAssets();
+app.MapHealthChecks("/healthz");
 app.MapControllers();
 app.MapRazorComponents<App>()
    .AddInteractiveServerRenderMode();

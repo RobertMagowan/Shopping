@@ -43,6 +43,41 @@ env:
   TEMPLATE_FILE: infra/main.bicep
 
 jobs:
+  deployment-target:
+    name: infra-deployment-target
+    if: ${{ github.event_name != 'pull_request' }}
+    runs-on: ubuntu-latest
+    outputs:
+      environmentName: ${{ steps.target.outputs.environmentName }}
+      shouldDeploy: ${{ steps.target.outputs.shouldDeploy }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+
+      - name: Resolve deployment target
+        id: target
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "environmentName=${{ inputs.environmentName }}" >> "$GITHUB_OUTPUT"
+            if [ "${{ inputs.operation }}" = "deploy" ]; then
+              echo "shouldDeploy=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "shouldDeploy=false" >> "$GITHUB_OUTPUT"
+            fi
+            exit 0
+          fi
+
+          echo "environmentName=dev" >> "$GITHUB_OUTPUT"
+
+          if git diff --quiet HEAD^ HEAD -- infra .github/workflows/infra.yml; then
+            echo "shouldDeploy=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "shouldDeploy=true" >> "$GITHUB_OUTPUT"
+          fi
+
   infra-static-validation:
     name: infra-static-validation-${{ matrix.environmentName }}
     if: ${{ github.event_name != 'workflow_dispatch' }}
@@ -62,6 +97,8 @@ jobs:
       PARAMETER_FILE: infra/parameters/${{ matrix.environmentName }}.bicepparam
       SQL_ADMINISTRATOR_LOGIN: sqladminuser
       SQL_ADMINISTRATOR_PASSWORD: ReplaceOnlyForValidation123!
+      AZURE_PRINCIPAL_OBJECT_ID: 00000000-0000-0000-0000-000000000000
+      CONTAINER_IMAGE_TAG: validation
 
     steps:
       - name: Checkout
@@ -74,21 +111,24 @@ jobs:
         run: az bicep build-params --file "$PARAMETER_FILE"
 
   infra-deploy:
-    name: infra-deploy-${{ inputs.environmentName }}
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.operation == 'deploy' }}
+    name: infra-deploy-${{ needs.deployment-target.outputs.environmentName }}
+    needs:
+      - deployment-target
+    if: ${{ needs.deployment-target.outputs.shouldDeploy == 'true' }}
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environmentName }}
+    environment: ${{ needs.deployment-target.outputs.environmentName }}
     permissions:
       contents: read
       id-token: write
     env:
-      ENVIRONMENT_NAME: ${{ inputs.environmentName }}
-      AZURE_LOCATION: ${{ inputs.location }}
+      ENVIRONMENT_NAME: ${{ needs.deployment-target.outputs.environmentName }}
+      AZURE_LOCATION: ${{ github.event_name == 'push' && 'uksouth' || inputs.location }}
       WORKLOAD_NAME: ${{ vars.WORKLOAD_NAME }}
       DEPLOYMENT_INSTANCE: ${{ vars.DEPLOYMENT_INSTANCE }}
       RESOURCE_SUFFIX: ${{ vars.RESOURCE_SUFFIX }}
       PARAMETER_FILE: infra/parameters/${{ inputs.environmentName }}.bicepparam
       AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_PRINCIPAL_OBJECT_ID: ${{ vars.AZURE_PRINCIPAL_OBJECT_ID }}
       AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
       AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       SQL_ADMINISTRATOR_LOGIN: ${{ vars.SQL_ADMINISTRATOR_LOGIN || 'sqladminuser' }}
@@ -101,6 +141,7 @@ jobs:
       ENTRA_EXTERNAL_ID_API_CLIENT_ID: ${{ vars.ENTRA_EXTERNAL_ID_API_CLIENT_ID }}
       ENTRA_EXTERNAL_ID_API_AUDIENCE: ${{ vars.ENTRA_EXTERNAL_ID_API_AUDIENCE }}
       SHOPPING_API_SCOPE: ${{ vars.SHOPPING_API_SCOPE }}
+      CONTAINER_IMAGE_TAG: bootstrap
 
     steps:
       - name: Checkout
@@ -110,6 +151,7 @@ jobs:
         run: |
           required=(
             AZURE_CLIENT_ID
+            AZURE_PRINCIPAL_OBJECT_ID
             AZURE_TENANT_ID
             AZURE_SUBSCRIPTION_ID
             WORKLOAD_NAME
@@ -139,6 +181,27 @@ jobs:
           client-id: ${{ env.AZURE_CLIENT_ID }}
           tenant-id: ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Preserve deployed image tag
+        shell: bash
+        run: |
+          resource_group="rg-${WORKLOAD_NAME}-${DEPLOYMENT_INSTANCE}-${ENVIRONMENT_NAME}-${AZURE_LOCATION}"
+          web_app_name="app-${WORKLOAD_NAME}-web-${ENVIRONMENT_NAME}-${RESOURCE_SUFFIX}"
+          image_tag=bootstrap
+
+          if az webapp show --resource-group "$resource_group" --name "$web_app_name" >/dev/null 2>&1; then
+            linux_fx_version=$(az webapp config show \
+              --resource-group "$resource_group" \
+              --name "$web_app_name" \
+              --query linuxFxVersion \
+              --output tsv)
+
+            if [[ "$linux_fx_version" == *:* ]]; then
+              image_tag="${linux_fx_version##*:}"
+            fi
+          fi
+
+          echo "CONTAINER_IMAGE_TAG=$image_tag" >> "$GITHUB_ENV"
 
       - name: Build Bicep
         run: az bicep build --file "$TEMPLATE_FILE"
