@@ -126,7 +126,7 @@ jobs:
       WORKLOAD_NAME: ${{ vars.WORKLOAD_NAME }}
       DEPLOYMENT_INSTANCE: ${{ vars.DEPLOYMENT_INSTANCE }}
       RESOURCE_SUFFIX: ${{ vars.RESOURCE_SUFFIX }}
-      PARAMETER_FILE: infra/parameters/${{ inputs.environmentName }}.bicepparam
+      PARAMETER_FILE: infra/parameters/${{ needs.deployment-target.outputs.environmentName }}.bicepparam
       AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
       AZURE_PRINCIPAL_OBJECT_ID: ${{ vars.AZURE_PRINCIPAL_OBJECT_ID }}
       AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}

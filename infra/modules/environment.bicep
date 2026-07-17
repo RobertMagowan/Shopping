@@ -458,6 +458,7 @@ resource webApp 'Microsoft.Web/sites@2024-04-01' = {
     httpsOnly: true
     publicNetworkAccess: allowPublicAppAccess ? 'Enabled' : 'Disabled'
     virtualNetworkSubnetId: appServiceIntegrationSubnet.id
+    vnetImagePullEnabled: enablePrivateEndpoints
     siteConfig: {
       alwaysOn: true
       acrUseManagedIdentityCreds: true
@@ -534,6 +535,7 @@ resource apiApp 'Microsoft.Web/sites@2024-04-01' = {
     httpsOnly: true
     publicNetworkAccess: allowPublicAppAccess ? 'Enabled' : 'Disabled'
     virtualNetworkSubnetId: appServiceIntegrationSubnet.id
+    vnetImagePullEnabled: enablePrivateEndpoints
     siteConfig: {
       alwaysOn: true
       acrUseManagedIdentityCreds: true
