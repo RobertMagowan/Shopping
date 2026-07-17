@@ -254,6 +254,31 @@ function Get-GitHubOidcSubjectPrefix {
     return $subjectPrefix
 }
 
+function Get-GitHubOidcIssuer {
+    return "https://token.actions.githubusercontent.com"
+}
+
+function Get-GitHubOidcAudience {
+    return "api://AzureADTokenExchange"
+}
+
+function Get-RequiredAzureResourceProviders {
+    return @(
+        "Microsoft.Authorization",
+        "Microsoft.Cache",
+        "Microsoft.Cdn",
+        "Microsoft.ContainerRegistry",
+        "Microsoft.Insights",
+        "Microsoft.KeyVault",
+        "Microsoft.Network",
+        "Microsoft.OperationalInsights",
+        "Microsoft.Resources",
+        "Microsoft.Sql",
+        "Microsoft.Storage",
+        "Microsoft.Web"
+    )
+}
+
 function ConvertTo-WebRedirectUri {
     param(
         [string]$BaseUrl,

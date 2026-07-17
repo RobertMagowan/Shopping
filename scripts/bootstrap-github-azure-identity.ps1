@@ -37,15 +37,17 @@ function Set-FederatedCredential {
 
     $existing = Invoke-AzJson -Arguments @("ad", "app", "federated-credential", "list", "--id", $AppId)
     $match = @($existing | Where-Object { $_.name -eq $Name })
+    $expectedIssuer = Get-GitHubOidcIssuer
+    $expectedAudience = Get-GitHubOidcAudience
 
     if ($match.Count -gt 1) {
         throw "Application '$AppId' has duplicate federated credentials named '$Name'. Remove the duplicate before continuing."
     }
 
     if ($match.Count -eq 1) {
-        $audiencesMatch = @(Compare-Object -ReferenceObject @("api://AzureADTokenExchange") -DifferenceObject @($match[0].audiences) -CaseSensitive).Count -eq 0
+        $audiencesMatch = @(Compare-Object -ReferenceObject @($expectedAudience) -DifferenceObject @($match[0].audiences) -CaseSensitive).Count -eq 0
 
-        if ($match[0].issuer -ceq "https://token.actions.githubusercontent.com/" -and
+        if ($match[0].issuer -ceq $expectedIssuer -and
             $match[0].subject -ceq $Subject -and
             $audiencesMatch) {
             return
@@ -54,10 +56,10 @@ function Set-FederatedCredential {
 
     $credential = @{
         name = $Name
-        issuer = "https://token.actions.githubusercontent.com/"
+        issuer = $expectedIssuer
         subject = $Subject
         description = "Shopping bootstrap: GitHub Actions OIDC for $Subject"
-        audiences = @("api://AzureADTokenExchange")
+        audiences = @($expectedAudience)
     }
 
     $tempFile = New-TemporaryFile
@@ -72,7 +74,7 @@ function Set-FederatedCredential {
             return
         }
 
-        Invoke-AzJson -Arguments @("ad", "app", "federated-credential", "update", "--id", $AppId, "--federated-credential-id", $Name, "--parameters", $tempFile.FullName) | Out-Null
+        Invoke-AzJson -Arguments @("ad", "app", "federated-credential", "update", "--id", $AppId, "--federated-credential-id", $match[0].id, "--parameters", $tempFile.FullName) | Out-Null
     }
     finally {
         Remove-Item -LiteralPath $tempFile.FullName -Force -ErrorAction SilentlyContinue
@@ -95,11 +97,76 @@ function Set-RoleAssignment {
     Invoke-AzJson -Arguments @("role", "assignment", "create", "--assignee-object-id", $PrincipalId, "--assignee-principal-type", "ServicePrincipal", "--role", $RoleName, "--scope", $Scope) | Out-Null
 }
 
+function Wait-AzureResourceProviders {
+    param(
+        [string[]]$Namespaces,
+        [string]$SubscriptionId,
+        [int]$TimeoutSeconds = 900
+    )
+
+    $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
+
+    while ($true) {
+        $pendingNamespaces = @(
+            $Namespaces | Where-Object {
+                $registrationState = Invoke-AzTsv -Arguments @(
+                    "provider", "show",
+                    "--subscription", $SubscriptionId,
+                    "--namespace", $_,
+                    "--query", "registrationState"
+                )
+                $registrationState -ne "Registered"
+            }
+        )
+
+        if ($pendingNamespaces.Count -eq 0) {
+            return
+        }
+
+        if ([DateTimeOffset]::UtcNow -ge $deadline) {
+            throw "Azure resource-provider registration timed out for: $($pendingNamespaces -join ', ')."
+        }
+
+        Write-Host "Waiting for Azure resource providers: $($pendingNamespaces -join ', ')"
+        Start-Sleep -Seconds 10
+    }
+}
+
 Assert-Command -Name "az"
 Assert-Command -Name "gh"
 $canonicalRepository = Get-CanonicalGitHubRepository -Repository $Repository
 $oidcSubjectPrefix = Get-GitHubOidcSubjectPrefix -Repository $canonicalRepository
 Assert-AzureContext -TenantId $TenantId -SubscriptionId $SubscriptionId
+
+$providersToWaitFor = @()
+
+foreach ($providerNamespace in (Get-RequiredAzureResourceProviders)) {
+    $registrationState = Invoke-AzTsv -Arguments @(
+        "provider", "show",
+        "--subscription", $SubscriptionId,
+        "--namespace", $providerNamespace,
+        "--query", "registrationState"
+    )
+
+    if ($registrationState -eq "Registered") {
+        continue
+    }
+
+    if ($PSCmdlet.ShouldProcess($providerNamespace, "Register Azure resource provider")) {
+        Invoke-AzJson -Arguments @(
+            "provider", "register",
+            "--subscription", $SubscriptionId,
+            "--namespace", $providerNamespace
+        ) | Out-Null
+        $providersToWaitFor += $providerNamespace
+    }
+}
+
+if ($providersToWaitFor.Count -gt 0) {
+    Wait-AzureResourceProviders `
+        -Namespaces $providersToWaitFor `
+        -SubscriptionId $SubscriptionId
+}
 
 $state = Read-BootstrapState -Path $StatePath
 $rootState = Get-OrAddStateSection -State $state -Name "bootstrap"

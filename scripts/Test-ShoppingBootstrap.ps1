@@ -56,6 +56,38 @@ function Test-SetEquality {
     return @(Compare-Object -ReferenceObject $expectedValues -DifferenceObject $actualValues -CaseSensitive).Count -eq 0
 }
 
+function Test-GitHubFederatedCredentials {
+    param(
+        [object[]]$Credentials,
+        [string]$SubjectPrefix,
+        [string[]]$Environments
+    )
+
+    $managedCredentials = @($Credentials | Where-Object { $_.name -like "github-*" })
+
+    if ($managedCredentials.Count -ne $Environments.Count) {
+        return $false
+    }
+
+    $expectedIssuer = Get-GitHubOidcIssuer
+    $expectedAudience = Get-GitHubOidcAudience
+
+    foreach ($environmentName in $Environments) {
+        $expectedName = "github-$environmentName"
+        $expectedSubject = "$SubjectPrefix`:environment:$environmentName"
+        $matches = @($managedCredentials | Where-Object { $_.name -ceq $expectedName })
+
+        if ($matches.Count -ne 1 -or
+            $matches[0].issuer -cne $expectedIssuer -or
+            $matches[0].subject -cne $expectedSubject -or
+            -not (Test-SetEquality -Actual @($matches[0].audiences) -Expected @($expectedAudience))) {
+            return $false
+        }
+    }
+
+    return $true
+}
+
 if (-not (Test-Path -LiteralPath $ConfigPath)) {
     throw "Bootstrap configuration '$ConfigPath' does not exist."
 }
@@ -104,19 +136,21 @@ else {
 try {
     $deploymentApp = Invoke-GraphGet -TenantId $state.azure.tenantId -Uri "https://graph.microsoft.com/v1.0/applications/$($state.azure.deploymentApplicationObjectId)"
     $credentials = Invoke-GraphGet -TenantId $state.azure.tenantId -Uri "https://graph.microsoft.com/v1.0/applications/$($state.azure.deploymentApplicationObjectId)/federatedIdentityCredentials"
-    $expectedSubjects = @($config.Environments | ForEach-Object { "$oidcSubjectPrefix`:environment:$_" })
-    $actualSubjects = @($credentials.value | Where-Object { $_.name -like "github-*" } | ForEach-Object subject)
     $stateSubjectPrefix = Get-ObjectPropertyValue -InputObject $state.bootstrap -Name "oidcSubjectPrefix"
     $expectedDeploymentAppName = "$($config.WorkloadName)-$deploymentInstance-github-deploy"
+    $credentialsMatch = Test-GitHubFederatedCredentials `
+        -Credentials @($credentials.value) `
+        -SubjectPrefix $oidcSubjectPrefix `
+        -Environments @($config.Environments)
 
     if ($deploymentApp.appId -eq $state.azure.deploymentApplicationClientId -and
         $deploymentApp.displayName -eq $expectedDeploymentAppName -and
         $stateSubjectPrefix -ceq $oidcSubjectPrefix -and
-        (Test-SetEquality -Actual $actualSubjects -Expected $expectedSubjects)) {
-        Add-VerificationResult -Area "Azure OIDC" -Status "Pass" -Detail "Deployment application and case-sensitive environment subjects match state."
+        $credentialsMatch) {
+        Add-VerificationResult -Area "Azure OIDC" -Status "Pass" -Detail "Deployment application and federated credential names, issuers, subjects, and audiences match configuration."
     }
     else {
-        Add-VerificationResult -Area "Azure OIDC" -Status "Fail" -Detail "Actual subjects '$($actualSubjects -join ', ')' differ from '$($expectedSubjects -join ', ')'."
+        Add-VerificationResult -Area "Azure OIDC" -Status "Fail" -Detail "Deployment application or managed GitHub federated credentials differ from configuration."
     }
 }
 catch {
@@ -141,6 +175,30 @@ try {
 }
 catch {
     Add-VerificationResult -Area "Azure RBAC" -Status "Fail" -Detail $_.Exception.Message
+}
+
+try {
+    $unregisteredProviders = @(
+        Get-RequiredAzureResourceProviders | Where-Object {
+            $registrationState = Invoke-AzTsv -Arguments @(
+                "provider", "show",
+                "--subscription", $state.azure.subscriptionId,
+                "--namespace", $_,
+                "--query", "registrationState"
+            )
+            $registrationState -ne "Registered"
+        }
+    )
+
+    if ($unregisteredProviders.Count -eq 0) {
+        Add-VerificationResult -Area "Azure providers" -Status "Pass" -Detail "All resource providers required by the IaC are registered."
+    }
+    else {
+        Add-VerificationResult -Area "Azure providers" -Status "Fail" -Detail "Not registered: $($unregisteredProviders -join ', ')."
+    }
+}
+catch {
+    Add-VerificationResult -Area "Azure providers" -Status "Fail" -Detail $_.Exception.Message
 }
 
 try {

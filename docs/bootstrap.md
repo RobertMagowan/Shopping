@@ -52,6 +52,7 @@ The operator requires:
 - GitHub repository administrator permission.
 - Permission to create Entra applications and service principals.
 - Permission to assign the configured Azure roles at subscription scope.
+- App Service worker quota for each selected region and SKU. Each environment requests two workers; quota must cover all environments that will run concurrently.
 - Permission to grant tenant-wide consent when `-GrantAdminConsent` is used.
 - Permission to assign the initial Admin app roles when `BootstrapAdminUserObjectId` is configured.
 
@@ -170,7 +171,7 @@ az account set --subscription <subscription-id>
   -Stage AzureIdentity
 ```
 
-This creates or adopts one uniquely named deployment application, records its object IDs, creates exact environment-based OIDC credentials, and ensures the configured subscription roles.
+This registers the Azure resource providers required by the IaC, creates or adopts one uniquely named deployment application, records its object IDs, creates exact environment-based OIDC credentials, and ensures the configured subscription roles. Provider registration can take several minutes on a new subscription; the script waits for Azure to report completion before continuing.
 
 ## 6. Apply The External ID Stage
 
