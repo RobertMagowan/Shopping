@@ -22,8 +22,10 @@ public static class DependencyInjection
 
         ValidateProductImageStorageAuthentication(productImageStorageOptions, isDevelopment);
         services.AddSingleton(productImageStorageOptions);
-        services.AddSingleton(_ => CreateBlobContainerClient(productImageStorageOptions));
-        services.AddScoped<IProductImageUrlProvider, AzureBlobProductImageUrlProvider>();
+        services.AddSingleton(_ => CreateBlobServiceClient(productImageStorageOptions));
+        services.AddSingleton(services =>
+            services.GetRequiredService<BlobServiceClient>().GetBlobContainerClient(productImageStorageOptions.ContainerName));
+        services.AddSingleton<IProductImageUrlProvider, AzureBlobProductImageUrlProvider>();
         services.AddHostedService<ProductImageBlobSeedHostedService>();
 
         if (!string.IsNullOrWhiteSpace(databaseConnectionString))
@@ -48,24 +50,28 @@ public static class DependencyInjection
             ServiceUri = configuration[$"{ProductImageStorageOptions.SectionName}:ServiceUri"] ?? "",
             ContainerName = configuration[$"{ProductImageStorageOptions.SectionName}:ContainerName"] ?? "product-images",
             PublicBaseUri = configuration[$"{ProductImageStorageOptions.SectionName}:PublicBaseUri"] ?? "",
+            UseSharedAccessSignatures = bool.TryParse(configuration[$"{ProductImageStorageOptions.SectionName}:UseSharedAccessSignatures"], out var useSharedAccessSignatures) &&
+                                        useSharedAccessSignatures,
+            SharedAccessSignatureLifetimeMinutes = int.TryParse(configuration[$"{ProductImageStorageOptions.SectionName}:SharedAccessSignatureLifetimeMinutes"],
+                                                                out var sharedAccessSignatureLifetimeMinutes)
+                ? sharedAccessSignatureLifetimeMinutes
+                : 10,
             SeedOnStartup = string.IsNullOrWhiteSpace(seedOnStartupValue) || bool.Parse(seedOnStartupValue)
         };
     }
 
-    private static BlobContainerClient CreateBlobContainerClient(ProductImageStorageOptions options)
+    private static BlobServiceClient CreateBlobServiceClient(ProductImageStorageOptions options)
     {
         var clientOptions = new BlobClientOptions(BlobClientOptions.ServiceVersion.V2021_12_02);
 
         if (!string.IsNullOrWhiteSpace(options.ConnectionString))
         {
-            return new BlobServiceClient(options.ConnectionString, clientOptions)
-                .GetBlobContainerClient(options.ContainerName);
+            return new BlobServiceClient(options.ConnectionString, clientOptions);
         }
 
         if (!string.IsNullOrWhiteSpace(options.ServiceUri))
         {
-            return new BlobServiceClient(new Uri(options.ServiceUri, UriKind.Absolute), CreateDefaultAzureCredential(), clientOptions)
-                .GetBlobContainerClient(options.ContainerName);
+            return new BlobServiceClient(new Uri(options.ServiceUri, UriKind.Absolute), CreateDefaultAzureCredential(), clientOptions);
         }
 
         throw new InvalidOperationException("Missing product image storage configuration. Configure either " +

@@ -14,18 +14,30 @@ public sealed class GetPublishedProductsQueryHandler(IProductReadRepository prod
     {
         var products = await productReadRepository.GetPublishedProductsAsync(cancellationToken);
 
-        return products.OrderBy(product => product.Name)
-                       .Select(ToDto)
-                       .ToArray();
+        var productDtos = new List<ProductDto>();
+
+        foreach (var product in products.OrderBy(product => product.Name))
+        {
+            productDtos.Add(await ToDtoAsync(product, cancellationToken));
+        }
+
+        return productDtos.ToArray();
     }
 
-    private ProductDto ToDto(Product product)
+    private async Task<ProductDto> ToDtoAsync(Product product,
+                                              CancellationToken cancellationToken)
     {
-        var imageUrls = product.OrderedImageBlobNames
-                               .Select(productImageUrlProvider.GetImageUrl)
-                               .Where(imageUrl => !string.IsNullOrWhiteSpace(imageUrl))
-                               .Select(imageUrl => imageUrl!)
-                               .ToArray();
+        var imageUrls = new List<string>();
+
+        foreach (var blobName in product.OrderedImageBlobNames)
+        {
+            var imageUrl = await productImageUrlProvider.GetImageUrlAsync(blobName, cancellationToken);
+
+            if (!string.IsNullOrWhiteSpace(imageUrl))
+            {
+                imageUrls.Add(imageUrl);
+            }
+        }
 
         return new ProductDto(product.Id,
                               product.Name,
@@ -33,7 +45,7 @@ public sealed class GetPublishedProductsQueryHandler(IProductReadRepository prod
                               product.PriceAmount,
                               product.Currency,
                               product.CanBePurchased,
-                              productImageUrlProvider.GetImageUrl(product.PrimaryImageBlobName),
-                              imageUrls);
+                              await productImageUrlProvider.GetImageUrlAsync(product.PrimaryImageBlobName, cancellationToken),
+                              imageUrls.ToArray());
     }
 }

@@ -7,3 +7,7 @@ obj/
 TestResults/
 coverage/
 *.trx
+infra/**/*.json
+scripts/*.local.json
+scripts/bootstrap.config.psd1
+scripts/bootstrap-state.local.json

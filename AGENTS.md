@@ -89,6 +89,39 @@ Use standard C# conventions: four-space indentation, nullable reference types en
 
 Prefer explicit DTOs for API contracts. Do not expose persistence models directly through controllers or Blazor pages.
 
+Application-layer code must match the existing `src/Shopping.Application` style:
+
+- Put the file-scoped namespace first, then namespace-local `using` directives.
+- Use `sealed` classes for handlers and `record` types for command/query messages.
+- Put each command/query message and its handler in the same file, with the message record first and the handler immediately after it.
+- Use explicit handler interfaces such as `IGetPublishedProductsQueryHandler`.
+- Name CQRS methods `HandleAsync(...)`; name async port methods with the `Async` suffix.
+- Prefer primary constructors for simple dependency injection.
+- Wrap long constructor and method parameter lists onto aligned continuation lines.
+- Format fluent LINQ chains one call per line when they span multiple operations.
+- Keep ports in `Shopping.Application`; keep EF Core, Azure SDKs, SQL, Blob Storage, and emulator code out of this project.
+
+Example:
+
+```csharp
+namespace Shopping.Application.Catalog;
+
+using Contracts.Catalog;
+
+public sealed class ExampleQueryHandler(IExampleRepository repository) : IExampleQueryHandler
+{
+    public async Task<IReadOnlyCollection<ProductDto>> HandleAsync(ExampleQuery query,
+                                                                   CancellationToken cancellationToken)
+    {
+        var products = await repository.GetProductsAsync(cancellationToken);
+
+        return products.OrderBy(product => product.Name)
+                       .Select(ToDto)
+                       .ToArray();
+    }
+}
+```
+
 ## Testing Guidelines
 
 Tests use xUnit. Name test classes after the unit or endpoint under test, for example `ProductCatalogTests` or `ProductsControllerTests`. Use clear test method names that describe behavior, such as `GetProducts_ReturnsPublishedProducts`.
@@ -123,4 +156,12 @@ Pull requests should include a concise summary, testing evidence, configuration 
 
 ## Security & Configuration Tips
 
-All environments use Microsoft Entra External ID for authentication. `Shopping.Web` must use distributed token caching backed by Redis, not in-memory token caches. Do not commit secrets, connection strings with credentials, or keys. Non-secret environment-specific Entra values belong in the relevant `appsettings.{Environment}.json`; secret values belong in user secrets locally and Key Vault in Azure. Production settings should be supplied by the hosting environment.
+All environments use Microsoft Entra External ID for authentication. `Shopping.Web` must use distributed token caching backed by Redis, not in-memory token caches. Do not commit secrets, connection strings with credentials, or keys. `appsettings.Development.json` is local-only. Azure-hosted `dev`, `test`, and `prod` settings must be supplied by App Service configuration created by IaC. Sensitive deployed values must be stored in Key Vault and exposed to App Service with Key Vault references.
+
+Treat `scripts/bootstrap.config.psd1` and `scripts/bootstrap-state.local.json` as local bootstrap inputs and state; neither may contain secrets or be committed. Use `Initialize-ShoppingBootstrap.ps1` as the bootstrap entry point and run `Test-ShoppingBootstrap.ps1` after changes. The bootstrap scripts authoritatively own the dedicated Shopping app roles, scope, permissions, redirect URIs, GitHub environments, OIDC credentials, and named ruleset. Preview bootstrap changes with `-WhatIf`; do not make competing manual edits to script-owned properties.
+
+Use `-PromptForExternalIdValues` only for operator-driven bootstrap runs. CI and other unattended execution must provide configuration explicitly and must not enable interactive prompts.
+
+Do not independently change the App Service resource suffix algorithm in PowerShell, GitHub configuration, or Bicep. Bootstrap-generated `RESOURCE_SUFFIX` values make deployed hostnames and Entra redirect URIs deterministic before first deployment; update and verify all three locations together.
+
+Treat the resolved deployment instance as immutable after infrastructure is created. Each repository installation needs a distinct `InstanceName` within a shared Azure subscription; changing it changes resource-group and global resource identities.

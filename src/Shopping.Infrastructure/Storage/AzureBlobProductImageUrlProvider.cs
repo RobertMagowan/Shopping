@@ -2,23 +2,106 @@ namespace Shopping.Infrastructure.Storage;
 
 using Application.Catalog;
 using Azure.Storage.Blobs;
+using Azure.Storage.Blobs.Models;
+using Azure.Storage.Sas;
 
 public sealed class AzureBlobProductImageUrlProvider(
+    BlobServiceClient serviceClient,
     BlobContainerClient containerClient,
     ProductImageStorageOptions options) : IProductImageUrlProvider
 {
-    public string? GetImageUrl(string? blobName)
+    private readonly SemaphoreSlim userDelegationKeyLock = new(1, 1);
+    private UserDelegationKey? cachedUserDelegationKey;
+    private DateTimeOffset cachedUserDelegationKeyExpiresOn;
+
+    public async Task<string?> GetImageUrlAsync(string? blobName,
+                                                CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(blobName))
         {
             return null;
         }
 
+        var imageUri = GetBaseImageUri(blobName);
+
+        if (!options.UseSharedAccessSignatures)
+        {
+            return imageUri;
+        }
+
+        var expiresOn = GetSharedAccessSignatureExpiry(DateTimeOffset.UtcNow);
+        var startsOn = DateTimeOffset.UtcNow.AddMinutes(-5);
+        var userDelegationKey = await GetUserDelegationKeyAsync(startsOn,
+                                                                expiresOn,
+                                                                cancellationToken);
+
+        var sasBuilder = new BlobSasBuilder
+        {
+            BlobContainerName = options.ContainerName,
+            BlobName = blobName,
+            Resource = "b",
+            StartsOn = startsOn,
+            ExpiresOn = expiresOn,
+            Protocol = SasProtocol.Https
+        };
+
+        sasBuilder.SetPermissions(BlobSasPermissions.Read);
+
+        var sasQuery = sasBuilder.ToSasQueryParameters(userDelegationKey,
+                                                       serviceClient.AccountName);
+
+        return $"{imageUri}?{sasQuery}";
+    }
+
+    private async Task<UserDelegationKey> GetUserDelegationKeyAsync(DateTimeOffset startsOn,
+                                                                    DateTimeOffset expiresOn,
+                                                                    CancellationToken cancellationToken)
+    {
+        if (cachedUserDelegationKey is not null && cachedUserDelegationKeyExpiresOn >= expiresOn)
+        {
+            return cachedUserDelegationKey;
+        }
+
+        await userDelegationKeyLock.WaitAsync(cancellationToken);
+
+        try
+        {
+            if (cachedUserDelegationKey is not null && cachedUserDelegationKeyExpiresOn >= expiresOn)
+            {
+                return cachedUserDelegationKey;
+            }
+
+            var userDelegationKey = await serviceClient.GetUserDelegationKeyAsync(startsOn,
+                                                                                  expiresOn,
+                                                                                  cancellationToken);
+
+            cachedUserDelegationKey = userDelegationKey.Value;
+            cachedUserDelegationKeyExpiresOn = expiresOn;
+
+            return cachedUserDelegationKey;
+        }
+        finally
+        {
+            userDelegationKeyLock.Release();
+        }
+    }
+
+    private string GetBaseImageUri(string blobName)
+    {
         if (!string.IsNullOrWhiteSpace(options.PublicBaseUri))
         {
             return $"{options.PublicBaseUri.TrimEnd('/')}/{blobName.TrimStart('/')}";
         }
 
         return containerClient.GetBlobClient(blobName).Uri.AbsoluteUri;
+    }
+
+    private DateTimeOffset GetSharedAccessSignatureExpiry(DateTimeOffset utcNow)
+    {
+        var lifetimeMinutes = Math.Max(1, options.SharedAccessSignatureLifetimeMinutes);
+        var currentWindow = utcNow.ToUnixTimeSeconds() / (lifetimeMinutes * 60);
+        var nextWindowStart = DateTimeOffset.FromUnixTimeSeconds((currentWindow + 1) * lifetimeMinutes * 60);
+
+        return nextWindowStart;
     }
 }

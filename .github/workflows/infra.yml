@@ -1,0 +1,252 @@
+name: infra
+
+on:
+  pull_request:
+    branches:
+      - master
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Infrastructure operation to run.
+        required: true
+        type: choice
+        default: deploy
+        options:
+          - deploy
+          - destroy
+      environmentName:
+        description: Environment to deploy or destroy.
+        required: true
+        type: choice
+        default: dev
+        options:
+          - dev
+          - test
+          - prod
+      location:
+        description: Azure region for the deployment.
+        required: true
+        type: string
+        default: uksouth
+      confirmDestroy:
+        description: For destroy, type destroy-dev, destroy-test, or destroy-prod.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  TEMPLATE_FILE: infra/main.bicep
+
+jobs:
+  infra-static-validation:
+    name: infra-static-validation-${{ matrix.environmentName }}
+    if: ${{ github.event_name != 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        environmentName:
+          - dev
+          - test
+          - prod
+    env:
+      AZURE_LOCATION: uksouth
+      WORKLOAD_NAME: shopping
+      DEPLOYMENT_INSTANCE: validation
+      RESOURCE_SUFFIX: valtest
+      PARAMETER_FILE: infra/parameters/${{ matrix.environmentName }}.bicepparam
+      SQL_ADMINISTRATOR_LOGIN: sqladminuser
+      SQL_ADMINISTRATOR_PASSWORD: ReplaceOnlyForValidation123!
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Build Bicep
+        run: az bicep build --file "$TEMPLATE_FILE"
+
+      - name: Build Bicep parameters
+        run: az bicep build-params --file "$PARAMETER_FILE"
+
+  infra-deploy:
+    name: infra-deploy-${{ inputs.environmentName }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.operation == 'deploy' }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environmentName }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ENVIRONMENT_NAME: ${{ inputs.environmentName }}
+      AZURE_LOCATION: ${{ inputs.location }}
+      WORKLOAD_NAME: ${{ vars.WORKLOAD_NAME }}
+      DEPLOYMENT_INSTANCE: ${{ vars.DEPLOYMENT_INSTANCE }}
+      RESOURCE_SUFFIX: ${{ vars.RESOURCE_SUFFIX }}
+      PARAMETER_FILE: infra/parameters/${{ inputs.environmentName }}.bicepparam
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      SQL_ADMINISTRATOR_LOGIN: ${{ vars.SQL_ADMINISTRATOR_LOGIN || 'sqladminuser' }}
+      SQL_ADMINISTRATOR_PASSWORD: ${{ secrets.SQL_ADMINISTRATOR_PASSWORD }}
+      ENTRA_EXTERNAL_ID_INSTANCE: ${{ vars.ENTRA_EXTERNAL_ID_INSTANCE }}
+      ENTRA_EXTERNAL_ID_DOMAIN: ${{ vars.ENTRA_EXTERNAL_ID_DOMAIN }}
+      ENTRA_EXTERNAL_ID_TENANT_ID: ${{ vars.ENTRA_EXTERNAL_ID_TENANT_ID }}
+      ENTRA_EXTERNAL_ID_WEB_CLIENT_ID: ${{ vars.ENTRA_EXTERNAL_ID_WEB_CLIENT_ID }}
+      ENTRA_EXTERNAL_ID_WEB_CLIENT_SECRET: ${{ secrets.ENTRA_EXTERNAL_ID_WEB_CLIENT_SECRET }}
+      ENTRA_EXTERNAL_ID_API_CLIENT_ID: ${{ vars.ENTRA_EXTERNAL_ID_API_CLIENT_ID }}
+      ENTRA_EXTERNAL_ID_API_AUDIENCE: ${{ vars.ENTRA_EXTERNAL_ID_API_AUDIENCE }}
+      SHOPPING_API_SCOPE: ${{ vars.SHOPPING_API_SCOPE }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Ensure deployment configuration is present
+        run: |
+          required=(
+            AZURE_CLIENT_ID
+            AZURE_TENANT_ID
+            AZURE_SUBSCRIPTION_ID
+            WORKLOAD_NAME
+            DEPLOYMENT_INSTANCE
+            RESOURCE_SUFFIX
+            SQL_ADMINISTRATOR_PASSWORD
+            ENTRA_EXTERNAL_ID_INSTANCE
+            ENTRA_EXTERNAL_ID_DOMAIN
+            ENTRA_EXTERNAL_ID_TENANT_ID
+            ENTRA_EXTERNAL_ID_WEB_CLIENT_ID
+            ENTRA_EXTERNAL_ID_WEB_CLIENT_SECRET
+            ENTRA_EXTERNAL_ID_API_CLIENT_ID
+            ENTRA_EXTERNAL_ID_API_AUDIENCE
+            SHOPPING_API_SCOPE
+          )
+
+          for name in "${required[@]}"; do
+            if [ -z "${!name}" ]; then
+              echo "$name must be configured on the GitHub Environment before deployment."
+              exit 1
+            fi
+          done
+
+      - name: Azure login
+        uses: azure/login@v3
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build Bicep
+        run: az bicep build --file "$TEMPLATE_FILE"
+
+      - name: Build Bicep parameters
+        run: az bicep build-params --file "$PARAMETER_FILE"
+
+      - name: Validate deployment
+        run: |
+          az deployment sub validate \
+            --name "shopping-${ENVIRONMENT_NAME}-${GITHUB_RUN_NUMBER}-validate" \
+            --location "$AZURE_LOCATION" \
+            --parameters "$PARAMETER_FILE"
+
+      - name: What-if deployment
+        run: |
+          az deployment sub what-if \
+            --name "shopping-${ENVIRONMENT_NAME}-${GITHUB_RUN_NUMBER}-whatif" \
+            --location "$AZURE_LOCATION" \
+            --parameters "$PARAMETER_FILE"
+
+      - name: Deploy infrastructure
+        run: |
+          deployment_name="shopping-${ENVIRONMENT_NAME}-${GITHUB_RUN_NUMBER}"
+
+          az deployment sub create \
+            --name "$deployment_name" \
+            --location "$AZURE_LOCATION" \
+            --parameters "$PARAMETER_FILE"
+
+          web_redirect_uri=$(az deployment sub show \
+            --name "$deployment_name" \
+            --query properties.outputs.webRedirectUri.value \
+            --output tsv)
+          expected_redirect_uri="https://app-${WORKLOAD_NAME}-web-${ENVIRONMENT_NAME}-${RESOURCE_SUFFIX}.azurewebsites.net/signin-oidc"
+
+          if [ "$web_redirect_uri" != "$expected_redirect_uri" ]; then
+            echo "Bicep output '$web_redirect_uri' differs from bootstrapped redirect '$expected_redirect_uri'."
+            exit 1
+          fi
+
+          echo "### Infrastructure deployment" >> "$GITHUB_STEP_SUMMARY"
+          echo "Web redirect URI: \`$web_redirect_uri\`" >> "$GITHUB_STEP_SUMMARY"
+
+  infra-destroy:
+    name: infra-destroy-${{ inputs.environmentName }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.operation == 'destroy' }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environmentName }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ENVIRONMENT_NAME: ${{ inputs.environmentName }}
+      AZURE_LOCATION: ${{ inputs.location }}
+      WORKLOAD_NAME: ${{ vars.WORKLOAD_NAME }}
+      DEPLOYMENT_INSTANCE: ${{ vars.DEPLOYMENT_INSTANCE }}
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      RESOURCE_GROUP_NAME: ${{ vars.RESOURCE_GROUP_NAME }}
+      CONFIRM_DESTROY: ${{ inputs.confirmDestroy }}
+
+    steps:
+      - name: Ensure destroy configuration is present
+        run: |
+          required=(
+            AZURE_CLIENT_ID
+            AZURE_TENANT_ID
+            AZURE_SUBSCRIPTION_ID
+            WORKLOAD_NAME
+            DEPLOYMENT_INSTANCE
+          )
+
+          for name in "${required[@]}"; do
+            if [ -z "${!name}" ]; then
+              echo "$name must be configured on the GitHub Environment before teardown."
+              exit 1
+            fi
+          done
+
+          expected="destroy-${ENVIRONMENT_NAME}"
+
+          if [ "$CONFIRM_DESTROY" != "$expected" ]; then
+            echo "Set confirmDestroy to '$expected' to tear down this environment."
+            exit 1
+          fi
+
+          if [ -z "$RESOURCE_GROUP_NAME" ]; then
+            RESOURCE_GROUP_NAME="rg-${WORKLOAD_NAME}-${DEPLOYMENT_INSTANCE}-${ENVIRONMENT_NAME}-${AZURE_LOCATION}"
+          fi
+
+          echo "RESOURCE_GROUP_NAME=$RESOURCE_GROUP_NAME" >> "$GITHUB_ENV"
+
+      - name: Azure login
+        uses: azure/login@v3
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Delete environment resource group
+        run: |
+          if [ "$(az group exists --name "$RESOURCE_GROUP_NAME")" != "true" ]; then
+            echo "Resource group '$RESOURCE_GROUP_NAME' does not exist. Nothing to tear down."
+            exit 0
+          fi
+
+          az group delete \
+            --name "$RESOURCE_GROUP_NAME" \
+            --yes

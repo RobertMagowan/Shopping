@@ -90,6 +90,10 @@ public sealed class GetPublishedProductsQueryTests
 
     private sealed class StubProductImageUrlProvider(string baseUri) : IProductImageUrlProvider
     {
-        public string? GetImageUrl(string? blobName) { return string.IsNullOrWhiteSpace(blobName) ? null : $"{baseUri}{blobName}"; }
+        public Task<string?> GetImageUrlAsync(string? blobName,
+                                              CancellationToken cancellationToken)
+        {
+            return Task.FromResult(string.IsNullOrWhiteSpace(blobName) ? null : $"{baseUri}{blobName}");
+        }
     }
 }

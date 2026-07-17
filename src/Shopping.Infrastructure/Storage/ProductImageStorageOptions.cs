@@ -12,5 +12,9 @@ public sealed class ProductImageStorageOptions
 
     public string PublicBaseUri { get; init; } = "";
 
+    public bool UseSharedAccessSignatures { get; init; }
+
+    public int SharedAccessSignatureLifetimeMinutes { get; init; } = 10;
+
     public bool SeedOnStartup { get; init; } = true;
 }
