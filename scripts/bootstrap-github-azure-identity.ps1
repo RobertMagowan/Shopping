@@ -37,15 +37,17 @@ function Set-FederatedCredential {
 
     $existing = Invoke-AzJson -Arguments @("ad", "app", "federated-credential", "list", "--id", $AppId)
     $match = @($existing | Where-Object { $_.name -eq $Name })
+    $expectedIssuer = Get-GitHubOidcIssuer
+    $expectedAudience = Get-GitHubOidcAudience
 
     if ($match.Count -gt 1) {
         throw "Application '$AppId' has duplicate federated credentials named '$Name'. Remove the duplicate before continuing."
     }
 
     if ($match.Count -eq 1) {
-        $audiencesMatch = @(Compare-Object -ReferenceObject @("api://AzureADTokenExchange") -DifferenceObject @($match[0].audiences) -CaseSensitive).Count -eq 0
+        $audiencesMatch = @(Compare-Object -ReferenceObject @($expectedAudience) -DifferenceObject @($match[0].audiences) -CaseSensitive).Count -eq 0
 
-        if ($match[0].issuer -ceq "https://token.actions.githubusercontent.com/" -and
+        if ($match[0].issuer -ceq $expectedIssuer -and
             $match[0].subject -ceq $Subject -and
             $audiencesMatch) {
             return
@@ -54,10 +56,10 @@ function Set-FederatedCredential {
 
     $credential = @{
         name = $Name
-        issuer = "https://token.actions.githubusercontent.com/"
+        issuer = $expectedIssuer
         subject = $Subject
         description = "Shopping bootstrap: GitHub Actions OIDC for $Subject"
-        audiences = @("api://AzureADTokenExchange")
+        audiences = @($expectedAudience)
     }
 
     $tempFile = New-TemporaryFile

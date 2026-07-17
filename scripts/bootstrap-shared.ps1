@@ -254,6 +254,14 @@ function Get-GitHubOidcSubjectPrefix {
     return $subjectPrefix
 }
 
+function Get-GitHubOidcIssuer {
+    return "https://token.actions.githubusercontent.com"
+}
+
+function Get-GitHubOidcAudience {
+    return "api://AzureADTokenExchange"
+}
+
 function ConvertTo-WebRedirectUri {
     param(
         [string]$BaseUrl,
