@@ -170,7 +170,7 @@ az account set --subscription <subscription-id>
   -Stage AzureIdentity
 ```
 
-This creates or adopts one uniquely named deployment application, records its object IDs, creates exact environment-based OIDC credentials, and ensures the configured subscription roles.
+This registers the Azure resource providers required by the IaC, creates or adopts one uniquely named deployment application, records its object IDs, creates exact environment-based OIDC credentials, and ensures the configured subscription roles. Provider registration can take several minutes on a new subscription; the script waits for Azure to report completion before continuing.
 
 ## 6. Apply The External ID Stage
 

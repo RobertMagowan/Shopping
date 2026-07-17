@@ -97,11 +97,76 @@ function Set-RoleAssignment {
     Invoke-AzJson -Arguments @("role", "assignment", "create", "--assignee-object-id", $PrincipalId, "--assignee-principal-type", "ServicePrincipal", "--role", $RoleName, "--scope", $Scope) | Out-Null
 }
 
+function Wait-AzureResourceProviders {
+    param(
+        [string[]]$Namespaces,
+        [string]$SubscriptionId,
+        [int]$TimeoutSeconds = 900
+    )
+
+    $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
+
+    while ($true) {
+        $pendingNamespaces = @(
+            $Namespaces | Where-Object {
+                $registrationState = Invoke-AzTsv -Arguments @(
+                    "provider", "show",
+                    "--subscription", $SubscriptionId,
+                    "--namespace", $_,
+                    "--query", "registrationState"
+                )
+                $registrationState -ne "Registered"
+            }
+        )
+
+        if ($pendingNamespaces.Count -eq 0) {
+            return
+        }
+
+        if ([DateTimeOffset]::UtcNow -ge $deadline) {
+            throw "Azure resource-provider registration timed out for: $($pendingNamespaces -join ', ')."
+        }
+
+        Write-Host "Waiting for Azure resource providers: $($pendingNamespaces -join ', ')"
+        Start-Sleep -Seconds 10
+    }
+}
+
 Assert-Command -Name "az"
 Assert-Command -Name "gh"
 $canonicalRepository = Get-CanonicalGitHubRepository -Repository $Repository
 $oidcSubjectPrefix = Get-GitHubOidcSubjectPrefix -Repository $canonicalRepository
 Assert-AzureContext -TenantId $TenantId -SubscriptionId $SubscriptionId
+
+$providersToWaitFor = @()
+
+foreach ($providerNamespace in (Get-RequiredAzureResourceProviders)) {
+    $registrationState = Invoke-AzTsv -Arguments @(
+        "provider", "show",
+        "--subscription", $SubscriptionId,
+        "--namespace", $providerNamespace,
+        "--query", "registrationState"
+    )
+
+    if ($registrationState -eq "Registered") {
+        continue
+    }
+
+    if ($PSCmdlet.ShouldProcess($providerNamespace, "Register Azure resource provider")) {
+        Invoke-AzJson -Arguments @(
+            "provider", "register",
+            "--subscription", $SubscriptionId,
+            "--namespace", $providerNamespace
+        ) | Out-Null
+        $providersToWaitFor += $providerNamespace
+    }
+}
+
+if ($providersToWaitFor.Count -gt 0) {
+    Wait-AzureResourceProviders `
+        -Namespaces $providersToWaitFor `
+        -SubscriptionId $SubscriptionId
+}
 
 $state = Read-BootstrapState -Path $StatePath
 $rootState = Get-OrAddStateSection -State $state -Name "bootstrap"

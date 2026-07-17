@@ -178,6 +178,30 @@ catch {
 }
 
 try {
+    $unregisteredProviders = @(
+        Get-RequiredAzureResourceProviders | Where-Object {
+            $registrationState = Invoke-AzTsv -Arguments @(
+                "provider", "show",
+                "--subscription", $state.azure.subscriptionId,
+                "--namespace", $_,
+                "--query", "registrationState"
+            )
+            $registrationState -ne "Registered"
+        }
+    )
+
+    if ($unregisteredProviders.Count -eq 0) {
+        Add-VerificationResult -Area "Azure providers" -Status "Pass" -Detail "All resource providers required by the IaC are registered."
+    }
+    else {
+        Add-VerificationResult -Area "Azure providers" -Status "Fail" -Detail "Not registered: $($unregisteredProviders -join ', ')."
+    }
+}
+catch {
+    Add-VerificationResult -Area "Azure providers" -Status "Fail" -Detail $_.Exception.Message
+}
+
+try {
     $webApp = Invoke-GraphGet -TenantId $state.externalId.tenantId -Uri "https://graph.microsoft.com/v1.0/applications/$($state.externalId.webApplicationObjectId)"
     $apiApp = Invoke-GraphGet -TenantId $state.externalId.tenantId -Uri "https://graph.microsoft.com/v1.0/applications/$($state.externalId.apiApplicationObjectId)"
     $expectedRoles = @("Admin", "CatalogManager", "Customer")
