@@ -7,6 +7,7 @@ This playbook covers recurring delivery after repository bootstrap. Use the [boo
 Before deploying:
 
 - `Test-ShoppingBootstrap.ps1` passes all automated checks.
+- Azure App Service quota covers the configured plan SKU and worker count in the target region.
 - The customer user flow and identity providers have been verified manually.
 - The pull request has all required status checks.
 - Production has a VNet-connected Linux runner labelled `self-hosted`, `linux`, and `shopping-prod`.
@@ -87,6 +88,7 @@ The application workflow obtains a short-lived Azure SQL token and runs `Shoppin
 | --- | --- |
 | Static validation fails | Fix the branch; no Azure resources were changed. |
 | IaC validation or `what-if` fails | Correct Bicep or environment configuration and rerun `infra`. |
+| App Service reports `SubscriptionIsOverQuotaForSku` | In Azure **Quotas**, select **App Service**, filter to the target region, and request enough workers for the configured SKU and all concurrent plans. Rerun `infra` after approval. |
 | IaC deployment fails | Inspect the Azure deployment operation, fix the cause, and rerun. The application workflow will not start after a failed automatic IaC run. |
 | Image build or push fails | Correct the Docker build or ACR access and rerun `app`. |
 | Migration fails | Inspect migrator output and SQL connectivity or permissions before rerunning. |

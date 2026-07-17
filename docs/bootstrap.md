@@ -52,6 +52,7 @@ The operator requires:
 - GitHub repository administrator permission.
 - Permission to create Entra applications and service principals.
 - Permission to assign the configured Azure roles at subscription scope.
+- App Service worker quota for each selected region and SKU. Each environment requests two workers; quota must cover all environments that will run concurrently.
 - Permission to grant tenant-wide consent when `-GrantAdminConsent` is used.
 - Permission to assign the initial Admin app roles when `BootstrapAdminUserObjectId` is configured.
 
