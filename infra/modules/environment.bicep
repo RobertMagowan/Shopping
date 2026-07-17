@@ -4,10 +4,6 @@ targetScope = 'resourceGroup'
 @minLength(2)
 param workloadName string
 
-@description('Stable installation name used for names and tags.')
-@minLength(2)
-param deploymentInstance string
-
 @description('Short environment name used for resource naming and tagging.')
 @minLength(2)
 param environmentName string
@@ -97,16 +93,16 @@ param shoppingApiScope string
 param tags object
 
 var suffix = toLower(resourceSuffix)
-var compactName = toLower(replace('${workloadName}${deploymentInstance}${environmentName}', '-', ''))
+var compactWorkloadName = toLower(replace(workloadName, '-', ''))
 var webAppName = 'app-${workloadName}-web-${environmentName}-${suffix}'
 var apiAppName = 'app-${workloadName}-api-${environmentName}-${suffix}'
 var appServicePlanName = 'asp-${workloadName}-${environmentName}-${suffix}'
-var containerRegistryName = take('acr${compactName}${suffix}', 50)
+var containerRegistryName = take('acr${compactWorkloadName}${environmentName}${suffix}', 50)
 var logAnalyticsName = 'log-${workloadName}-${environmentName}-${suffix}'
 var appInsightsName = 'appi-${workloadName}-${environmentName}-${suffix}'
 var vnetName = 'vnet-${workloadName}-${environmentName}-${suffix}'
-var keyVaultName = take('kv-${compactName}-${suffix}', 24)
-var storageAccountName = take('st${compactName}${suffix}', 24)
+var keyVaultName = 'kv-${environmentName}-${suffix}'
+var storageAccountName = 'st${environmentName}${suffix}'
 var sqlServerName = 'sql-${workloadName}-${environmentName}-${suffix}'
 var sqlDatabaseName = 'sqldb-${workloadName}-${environmentName}'
 var redisName = 'redis-${workloadName}-${environmentName}-${suffix}'
@@ -445,7 +441,7 @@ resource redisConnectionStringSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-
   }
 }
 
-resource webApp 'Microsoft.Web/sites@2024-04-01' = {
+resource webApp 'Microsoft.Web/sites@2024-11-01' = {
   name: webAppName
   location: location
   tags: tags
@@ -458,7 +454,10 @@ resource webApp 'Microsoft.Web/sites@2024-04-01' = {
     httpsOnly: true
     publicNetworkAccess: allowPublicAppAccess ? 'Enabled' : 'Disabled'
     virtualNetworkSubnetId: appServiceIntegrationSubnet.id
-    vnetImagePullEnabled: enablePrivateEndpoints
+    outboundVnetRouting: {
+      applicationTraffic: true
+      imagePullTraffic: enablePrivateEndpoints
+    }
     siteConfig: {
       alwaysOn: true
       acrUseManagedIdentityCreds: true
@@ -467,7 +466,6 @@ resource webApp 'Microsoft.Web/sites@2024-04-01' = {
       http20Enabled: true
       linuxFxVersion: 'DOCKER|${containerRegistry.properties.loginServer}/shopping-web:${containerImageTag}'
       minTlsVersion: '1.2'
-      vnetRouteAllEnabled: true
       appSettings: [
         {
           name: 'WEBSITES_PORT'
@@ -522,7 +520,7 @@ resource webApp 'Microsoft.Web/sites@2024-04-01' = {
   }
 }
 
-resource apiApp 'Microsoft.Web/sites@2024-04-01' = {
+resource apiApp 'Microsoft.Web/sites@2024-11-01' = {
   name: apiAppName
   location: location
   tags: tags
@@ -535,7 +533,10 @@ resource apiApp 'Microsoft.Web/sites@2024-04-01' = {
     httpsOnly: true
     publicNetworkAccess: allowPublicAppAccess ? 'Enabled' : 'Disabled'
     virtualNetworkSubnetId: appServiceIntegrationSubnet.id
-    vnetImagePullEnabled: enablePrivateEndpoints
+    outboundVnetRouting: {
+      applicationTraffic: true
+      imagePullTraffic: enablePrivateEndpoints
+    }
     siteConfig: {
       alwaysOn: true
       acrUseManagedIdentityCreds: true
@@ -544,7 +545,6 @@ resource apiApp 'Microsoft.Web/sites@2024-04-01' = {
       http20Enabled: true
       linuxFxVersion: 'DOCKER|${containerRegistry.properties.loginServer}/shopping-api:${containerImageTag}'
       minTlsVersion: '1.2'
-      vnetRouteAllEnabled: true
       appSettings: [
         {
           name: 'WEBSITES_PORT'

@@ -54,7 +54,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          fetch-depth: 2
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Resolve deployment target
         id: target
@@ -72,7 +73,7 @@ jobs:
 
           echo "environmentName=dev" >> "$GITHUB_OUTPUT"
 
-          if git diff --quiet HEAD^ HEAD -- infra .github/workflows/infra.yml; then
+          if git diff --quiet "${{ github.event.before }}" "${{ github.sha }}" -- infra .github/workflows/infra.yml; then
             echo "shouldDeploy=false" >> "$GITHUB_OUTPUT"
           else
             echo "shouldDeploy=true" >> "$GITHUB_OUTPUT"

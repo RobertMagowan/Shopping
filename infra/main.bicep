@@ -141,7 +141,6 @@ module environmentResources 'modules/environment.bicep' = {
   scope: environmentResourceGroup
   params: {
     workloadName: workloadName
-    deploymentInstance: deploymentInstance
     environmentName: environmentName
     location: location
     resourceSuffix: resourceSuffix
