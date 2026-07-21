@@ -117,8 +117,6 @@ var natPublicIpName = 'pip-nat-${workloadName}-${environmentName}-${suffix}'
 var containerAppsNsgName = 'nsg-container-apps-${environmentName}-${suffix}'
 var productImagesContainerName = 'product-images'
 var storageBlobEndpoint = 'https://${storageAccountName}.blob.${environment().suffixes.storage}'
-var frontDoorImageEndpoint = enableFrontDoorImageDelivery ? 'https://${frontDoorEndpoint!.properties.hostName}' : ''
-var productImagePublicBaseUri = enableFrontDoorImageDelivery ? frontDoorImageEndpoint : '${storageBlobEndpoint}/${productImagesContainerName}'
 var aspNetCoreEnvironment = environmentName == 'prod' ? 'Production' : environmentName == 'dev' ? 'Dev' : 'Test'
 var hasWebClientSecret = !empty(entraExternalIdWebClientSecret)
 var blobPrivateDnsZoneName = 'privatelink.blob.${environment().suffixes.storage}'
@@ -219,159 +217,48 @@ resource existingStorageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' e
   name: storageAccountName
 }
 
-resource frontDoorProfile 'Microsoft.Cdn/profiles@2024-05-01' = if (enableFrontDoorImageDelivery) {
-  name: frontDoorProfileName
-  location: 'global'
-  tags: tags
-  sku: {
-    name: 'Premium_AzureFrontDoor'
+module sql 'sql.bicep' = {
+  params: {
+    environmentName: environmentName
+    location: location
+    enablePrivateEndpoints: enablePrivateEndpoints
+    sqlServerName: sqlServerName
+    sqlDatabaseName: sqlDatabaseName
+    sqlDatabaseSkuName: sqlDatabaseSkuName
+    sqlAdministratorLogin: sqlAdministratorLogin
+    sqlAdministratorPassword: sqlAdministratorPassword
+    deploymentPrincipalObjectId: deploymentPrincipalObjectId
+    sqlEntraAdministratorLogin: sqlEntraAdministratorLogin
+    tags: tags
   }
 }
 
-resource frontDoorEndpoint 'Microsoft.Cdn/profiles/afdEndpoints@2024-05-01' = if (enableFrontDoorImageDelivery) {
-  parent: frontDoorProfile
-  name: frontDoorEndpointName
-  location: 'global'
-  tags: tags
-  properties: {
-    enabledState: 'Enabled'
+module redis 'redis.bicep' = {
+  params: {
+    environmentName: environmentName
+    location: location
+    enablePrivateEndpoints: enablePrivateEndpoints
+    redisName: redisName
+    managedRedisSkuName: managedRedisSkuName
+    keyVaultName: keyVaultName
+    tags: tags
   }
 }
 
-resource frontDoorOriginGroup 'Microsoft.Cdn/profiles/originGroups@2024-05-01' = if (enableFrontDoorImageDelivery) {
-  parent: frontDoorProfile
-  name: frontDoorOriginGroupName
-  properties: {
-    loadBalancingSettings: {
-      sampleSize: 4
-      successfulSamplesRequired: 3
-      additionalLatencyInMilliseconds: 50
-    }
-    healthProbeSettings: {
-      probePath: '/'
-      probeRequestType: 'HEAD'
-      probeProtocol: 'Https'
-      probeIntervalInSeconds: 100
-    }
-  }
-}
-
-resource frontDoorOrigin 'Microsoft.Cdn/profiles/originGroups/origins@2024-05-01' = if (enableFrontDoorImageDelivery) {
-  parent: frontDoorOriginGroup
-  name: frontDoorOriginName
-  properties: {
-    hostName: '${storage.outputs.storageAccountName}.blob.${environment().suffixes.storage}'
-    originHostHeader: '${storage.outputs.storageAccountName}.blob.${environment().suffixes.storage}'
-    httpPort: 80
-    httpsPort: 443
-    priority: 1
-    weight: 1000
-    enabledState: 'Enabled'
-    enforceCertificateNameCheck: true
-    privateLinkResourceId: storage.outputs.storageAccountId
-    privateLinkLocation: location
-    privateLinkSubResourceType: 'blob'
-  }
-}
-
-resource frontDoorRoute 'Microsoft.Cdn/profiles/afdEndpoints/routes@2024-05-01' = if (enableFrontDoorImageDelivery) {
-  parent: frontDoorEndpoint
-  name: frontDoorRouteName
-  dependsOn: [
-    frontDoorOrigin
-  ]
-  properties: {
-    enabledState: 'Enabled'
-    supportedProtocols: [
-      'Https'
-    ]
-    patternsToMatch: [
-      '/*'
-    ]
-    originGroup: {
-      id: frontDoorOriginGroup.id
-    }
-    originPath: '/${productImagesContainerName}'
-    forwardingProtocol: 'HttpsOnly'
-    httpsRedirect: 'Enabled'
-    linkToDefaultDomain: 'Enabled'
-    cacheConfiguration: {
-      queryStringCachingBehavior: 'UseQueryString'
-      compressionSettings: {
-        isCompressionEnabled: false
-      }
-    }
-  }
-}
-
-resource sqlServer 'Microsoft.Sql/servers@2023-08-01-preview' = {
-  name: sqlServerName
-  location: location
-  tags: tags
-  properties: {
-    administratorLogin: sqlAdministratorLogin
-    administratorLoginPassword: sqlAdministratorPassword
-    minimalTlsVersion: '1.2'
-    publicNetworkAccess: enablePrivateEndpoints ? 'Disabled' : 'Enabled'
-  }
-}
-
-resource sqlDatabase 'Microsoft.Sql/servers/databases@2023-08-01-preview' = {
-  parent: sqlServer
-  name: sqlDatabaseName
-  location: location
-  tags: tags
-  sku: {
-    name: sqlDatabaseSkuName
-  }
-  properties: {
-    zoneRedundant: environmentName == 'prod'
-  }
-}
-
-resource sqlEntraAdministrator 'Microsoft.Sql/servers/administrators@2023-08-01-preview' = {
-  parent: sqlServer
-  name: 'ActiveDirectory'
-  properties: {
-    administratorType: 'ActiveDirectory'
-    login: sqlEntraAdministratorLogin
-    sid: deploymentPrincipalObjectId
-    tenantId: tenant().tenantId
-  }
-}
-
-resource redis 'Microsoft.Cache/redisEnterprise@2025-07-01' = {
-  name: redisName
-  location: location
-  tags: tags
-  sku: {
-    name: managedRedisSkuName
-  }
-  properties: {
-    encryption: {}
-    highAvailability: environmentName == 'prod' ? 'Enabled' : 'Disabled'
-    minimumTlsVersion: '1.2'
-    publicNetworkAccess: enablePrivateEndpoints ? 'Disabled' : 'Enabled'
-  }
-}
-
-resource redisDatabase 'Microsoft.Cache/redisEnterprise/databases@2025-07-01' = {
-  parent: redis
-  name: 'default'
-  properties: {
-    accessKeysAuthentication: 'Enabled'
-    clientProtocol: 'Encrypted'
-    clusteringPolicy: 'NoCluster'
-    evictionPolicy: 'AllKeysLRU'
-    port: 10000
-  }
-}
-
-resource redisConnectionStringSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
-  parent: existingKeyVault
-  name: 'shopping-web-redis-connection-string'
-  properties: {
-    value: '${redis.properties.hostName}:${redisDatabase.properties.port},password=${redisDatabase.listKeys().primaryKey},ssl=True,abortConnect=False'
+module imageDelivery 'image-delivery.bicep' = {
+  params: {
+    enableFrontDoorImageDelivery: enableFrontDoorImageDelivery
+    location: location
+    frontDoorProfileName: frontDoorProfileName
+    frontDoorEndpointName: frontDoorEndpointName
+    frontDoorOriginGroupName: frontDoorOriginGroupName
+    frontDoorOriginName: frontDoorOriginName
+    frontDoorRouteName: frontDoorRouteName
+    storageAccountName: storageAccountName
+    storageAccountId: storage.outputs.storageAccountId
+    storageBlobEndpoint: storageBlobEndpoint
+    productImagesContainerName: productImagesContainerName
+    tags: tags
   }
 }
 
@@ -452,7 +339,7 @@ resource apiContainerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployAp
             }
             {
               name: 'ConnectionStrings__ShoppingDatabase'
-              value: 'Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Database=${sqlDatabase.name};Authentication=Active Directory Managed Identity;User Id=${identities.outputs.apiIdentityClientId};Encrypt=True;TrustServerCertificate=False;'
+              value: 'Server=tcp:${sql.outputs.sqlServerFullyQualifiedDomainName},1433;Database=${sql.outputs.sqlDatabaseName};Authentication=Active Directory Managed Identity;User Id=${identities.outputs.apiIdentityClientId};Encrypt=True;TrustServerCertificate=False;'
             }
             {
               name: 'ProductImageStorage__ServiceUri'
@@ -464,7 +351,7 @@ resource apiContainerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployAp
             }
             {
               name: 'ProductImageStorage__PublicBaseUri'
-              value: productImagePublicBaseUri
+              value: imageDelivery.outputs.productImagePublicBaseUri
             }
             {
               name: 'ProductImageStorage__UseSharedAccessSignatures'
@@ -546,7 +433,7 @@ resource webContainerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployAp
       secrets: concat([
         {
           name: 'redis-connection-string'
-          keyVaultUrl: redisConnectionStringSecret.properties.secretUri
+          keyVaultUrl: redis.outputs.redisConnectionStringSecretUri
           identity: webIdentityResourceId
         }
       ], hasWebClientSecret ? [
@@ -611,7 +498,7 @@ resource webContainerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployAp
             }
             {
               name: 'ProductImageStorage__PublicBaseUri'
-              value: productImagePublicBaseUri
+              value: imageDelivery.outputs.productImagePublicBaseUri
             }
             {
               name: 'ShoppingAzure__Redis__ConnectionString'
@@ -795,7 +682,7 @@ resource storagePrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' 
 }
 
 resource sqlPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = if (enablePrivateEndpoints) {
-  name: 'pe-${sqlServer.name}'
+  name: 'pe-${sqlServerName}'
   location: location
   tags: tags
   properties: {
@@ -806,7 +693,7 @@ resource sqlPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = if
       {
         name: 'sql'
         properties: {
-          privateLinkServiceId: sqlServer.id
+          privateLinkServiceId: sql.outputs.sqlServerId
           groupIds: [
             'sqlServer'
           ]
@@ -839,7 +726,7 @@ resource keyVaultPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01'
 }
 
 resource redisPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = if (enablePrivateEndpoints) {
-  name: 'pe-${redis.name}'
+  name: 'pe-${redisName}'
   location: location
   tags: tags
   properties: {
@@ -850,7 +737,7 @@ resource redisPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = 
       {
         name: 'redis'
         properties: {
-          privateLinkServiceId: redis.id
+          privateLinkServiceId: redis.outputs.redisId
           groupIds: [
             'redisEnterprise'
           ]
@@ -967,8 +854,8 @@ output containerRegistryName string = containerRegistry.outputs.containerRegistr
 output containerRegistryLoginServer string = containerRegistry.outputs.containerRegistryLoginServer
 output keyVaultName string = keyVault.outputs.keyVaultName
 output storageAccountName string = storage.outputs.storageAccountName
-output sqlServerName string = sqlServer.name
-output sqlDatabaseName string = sqlDatabase.name
-output sqlServerFullyQualifiedDomainName string = sqlServer.properties.fullyQualifiedDomainName
-output redisName string = redis.name
-output frontDoorImageEndpoint string = frontDoorImageEndpoint
+output sqlServerName string = sql.outputs.sqlServerName
+output sqlDatabaseName string = sql.outputs.sqlDatabaseName
+output sqlServerFullyQualifiedDomainName string = sql.outputs.sqlServerFullyQualifiedDomainName
+output redisName string = redis.outputs.redisName
+output frontDoorImageEndpoint string = imageDelivery.outputs.frontDoorImageEndpoint

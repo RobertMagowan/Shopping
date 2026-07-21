@@ -11,6 +11,9 @@ $requiredModules = @(
     'container-registry'
     'key-vault'
     'storage'
+    'sql'
+    'redis'
+    'image-delivery'
 )
 
 foreach ($moduleName in $requiredModules) {
