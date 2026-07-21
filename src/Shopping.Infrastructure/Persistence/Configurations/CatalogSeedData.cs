@@ -24,18 +24,18 @@ internal static class CatalogSeedData
 
     public static readonly object[] ProductImages =
     [
-        CreateImageSeed("starter-coffee", "Starter Coffee"),
-        CreateImageSeed("ceramic-mug", "Ceramic Mug"),
-        CreateImageSeed("travel-tumbler", "Travel Tumbler"),
-        CreateImageSeed("espresso-beans", "Espresso Beans"),
-        CreateImageSeed("breakfast-tea", "Breakfast Tea"),
-        CreateImageSeed("glass-teapot", "Glass Teapot"),
-        CreateImageSeed("pour-over-kit", "Pour Over Kit"),
-        CreateImageSeed("milk-frother", "Milk Frother"),
-        CreateImageSeed("coffee-filters", "Coffee Filters"),
-        CreateImageSeed("cold-brew-bottle", "Cold Brew Bottle"),
-        CreateImageSeed("digital-scale", "Digital Scale"),
-        CreateImageSeed("gift-card", "Gift Card")
+        .. CreateImageSeeds("starter-coffee", "Starter Coffee"),
+        .. CreateImageSeeds("ceramic-mug", "Ceramic Mug"),
+        .. CreateImageSeeds("travel-tumbler", "Travel Tumbler"),
+        .. CreateImageSeeds("espresso-beans", "Espresso Beans"),
+        .. CreateImageSeeds("breakfast-tea", "Breakfast Tea"),
+        .. CreateImageSeeds("glass-teapot", "Glass Teapot"),
+        .. CreateImageSeeds("pour-over-kit", "Pour Over Kit"),
+        .. CreateImageSeeds("milk-frother", "Milk Frother"),
+        .. CreateImageSeeds("coffee-filters", "Coffee Filters"),
+        .. CreateImageSeeds("cold-brew-bottle", "Cold Brew Bottle"),
+        .. CreateImageSeeds("digital-scale", "Digital Scale"),
+        .. CreateImageSeeds("gift-card", "Gift Card")
     ];
 
     private static Product CreateProduct(string id,
@@ -60,16 +60,33 @@ internal static class CatalogSeedData
         };
     }
 
-    private static object CreateImageSeed(string productId, string productName)
+    private static object[] CreateImageSeeds(string productId, string productName)
     {
+        return
+        [
+            CreateImageSeed(productId, productName, "primary", "primary ", 0, true),
+            CreateImageSeed(productId, productName, "detail", "detail ", 1, false),
+            CreateImageSeed(productId, productName, "lifestyle", "lifestyle ", 2, false)
+        ];
+    }
+
+    private static object CreateImageSeed(string productId,
+                                          string productName,
+                                          string imageType,
+                                          string altTextQualifier,
+                                          int displayOrder,
+                                          bool isPrimary)
+    {
+        var blobSuffix = isPrimary ? "" : $"-{imageType}";
+
         return new
         {
-            Id = $"{productId}-primary",
+            Id = $"{productId}-{imageType}",
             ProductId = productId,
-            BlobName = $"products/{productId}.svg",
-            AltText = $"{productName} product image",
-            DisplayOrder = 0,
-            IsPrimary = true
+            BlobName = $"products/{productId}{blobSuffix}.svg",
+            AltText = $"{productName} {altTextQualifier}product image",
+            DisplayOrder = displayOrder,
+            IsPrimary = isPrimary
         };
     }
 }
