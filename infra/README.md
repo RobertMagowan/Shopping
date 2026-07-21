@@ -108,7 +108,8 @@ The `infra` workflow:
 - validates and runs `what-if` before every deployment,
 - tears down a selected environment only from manual workflow dispatch,
 - requires a typed teardown confirmation such as `destroy-dev`,
-- deletes the environment resource group during teardown.
+- deletes the environment resource group during teardown,
+- purges soft-deleted Key Vaults after dev and test teardown; production vaults retain purge protection.
 
 The `app` workflow:
 

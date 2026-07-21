@@ -187,7 +187,9 @@ jobs:
         shell: bash
         run: |
           resource_group="rg-${WORKLOAD_NAME}-${DEPLOYMENT_INSTANCE}-${ENVIRONMENT_NAME}-${AZURE_LOCATION}"
-          key_vault_name="kv-${ENVIRONMENT_NAME}-${RESOURCE_SUFFIX}"
+          compact_workload_name=$(echo "$WORKLOAD_NAME" | tr '[:upper:]' '[:lower:]' | tr -d '-')
+          key_vault_prefix="kv${compact_workload_name}${ENVIRONMENT_NAME}"
+          key_vault_name="${key_vault_prefix:0:$((24 - ${#RESOURCE_SUFFIX}))}${RESOURCE_SUFFIX}"
 
           if az keyvault show-deleted \
             --name "$key_vault_name" \
@@ -287,6 +289,7 @@ jobs:
       AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
       AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       RESOURCE_GROUP_NAME: ${{ vars.RESOURCE_GROUP_NAME }}
+      RESOURCE_SUFFIX: ${{ vars.RESOURCE_SUFFIX }}
       CONFIRM_DESTROY: ${{ inputs.confirmDestroy }}
 
     steps:
@@ -298,6 +301,7 @@ jobs:
             AZURE_SUBSCRIPTION_ID
             WORKLOAD_NAME
             DEPLOYMENT_INSTANCE
+            RESOURCE_SUFFIX
           )
 
           for name in "${required[@]}"; do
@@ -329,11 +333,42 @@ jobs:
 
       - name: Delete environment resource group
         run: |
+          compact_workload_name=$(echo "$WORKLOAD_NAME" | tr '[:upper:]' '[:lower:]' | tr -d '-')
+          key_vault_prefix="kv${compact_workload_name}${ENVIRONMENT_NAME}"
+          expected_key_vault_name="${key_vault_prefix:0:$((24 - ${#RESOURCE_SUFFIX}))}${RESOURCE_SUFFIX}"
+
           if [ "$(az group exists --name "$RESOURCE_GROUP_NAME")" != "true" ]; then
             echo "Resource group '$RESOURCE_GROUP_NAME' does not exist. Nothing to tear down."
+
+            if [ "$ENVIRONMENT_NAME" != "prod" ] && az keyvault show-deleted \
+              --name "$expected_key_vault_name" \
+              --location "$AZURE_LOCATION" \
+              --output none 2>/dev/null; then
+              az keyvault purge \
+                --name "$expected_key_vault_name" \
+                --location "$AZURE_LOCATION"
+            fi
+
             exit 0
+          fi
+
+          key_vaults=""
+
+          if [ "$ENVIRONMENT_NAME" != "prod" ]; then
+            key_vaults=$(az keyvault list \
+              --resource-group "$RESOURCE_GROUP_NAME" \
+              --query "[].[name,location]" \
+              --output tsv)
           fi
 
           az group delete \
             --name "$RESOURCE_GROUP_NAME" \
             --yes
+
+          if [ -n "$key_vaults" ]; then
+            while IFS=$'\t' read -r vault_name vault_location; do
+              az keyvault purge \
+                --name "$vault_name" \
+                --location "$vault_location"
+            done <<< "$key_vaults"
+          fi

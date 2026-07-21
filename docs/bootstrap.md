@@ -68,6 +68,8 @@ Primary domain, such as contoso.onmicrosoft.com
 Authority, such as https://contoso.ciamlogin.com/
 ```
 
+Copy the tenant ID from the **External ID tenant overview** after switching directories. Do not use the home tenant ID shown for the Azure subscription that contains the `ciamDirectories` billing resource. Bootstrap resolves the OpenID Connect metadata before making changes and rejects a tenant ID, primary domain, and authority that do not describe the same External ID tenant.
+
 Also record the tenant ID and subscription ID that will host Azure resources. The Azure resource tenant and External ID tenant may be different.
 
 ## 2. Prepare The Repository

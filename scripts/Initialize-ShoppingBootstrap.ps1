@@ -254,6 +254,14 @@ foreach ($redirectUri in $config.ExternalId.WebRedirectUris) {
 
 Assert-Command -Name "az"
 Assert-Command -Name "gh"
+
+if ($Stage -in @("All", "ExternalId", "GitHub")) {
+    Assert-ExternalIdAuthority `
+        -TenantId $config.ExternalId.TenantId `
+        -Domain $config.ExternalId.Domain `
+        -Instance $config.ExternalId.Instance
+}
+
 $canonicalRepository = Get-CanonicalGitHubRepository -Repository $config.Repository
 $configuredInstanceName = [string](Get-ObjectPropertyValue -InputObject $config -Name "InstanceName")
 $deploymentInstance = Get-DeploymentInstanceName `

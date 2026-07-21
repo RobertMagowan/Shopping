@@ -17,6 +17,7 @@
     }
 
     ExternalId = @{
+        # Copy this from the External ID tenant overview, not the Azure subscription's home tenant.
         TenantId = "<external-id-tenant-id>"
         Domain = "<tenant-name>.onmicrosoft.com"
         Instance = "https://<tenant-name>.ciamlogin.com/"

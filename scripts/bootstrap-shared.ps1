@@ -222,6 +222,70 @@ function Assert-EntraContext {
     }
 }
 
+function Assert-ExternalIdAuthority {
+    param(
+        [string]$TenantId,
+        [string]$Domain,
+        [string]$Instance
+    )
+
+    $parsedTenantId = [Guid]::Empty
+
+    if (-not [Guid]::TryParse($TenantId, [ref]$parsedTenantId)) {
+        throw "External ID tenant ID '$TenantId' is not a valid GUID."
+    }
+
+    $normalizedTenantId = $parsedTenantId.ToString()
+    $domainMatch = [Regex]::Match($Domain.Trim(),
+                                 "^([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)\.onmicrosoft\.com$",
+                                 [Text.RegularExpressions.RegexOptions]::IgnoreCase)
+
+    if (-not $domainMatch.Success) {
+        throw "External ID domain '$Domain' must be the tenant's primary '<name>.onmicrosoft.com' domain."
+    }
+
+    $instanceUri = $null
+
+    if (-not [Uri]::TryCreate($Instance, [UriKind]::Absolute, [ref]$instanceUri) -or
+        $instanceUri.Scheme -ne "https" -or
+        $instanceUri.AbsolutePath -ne "/" -or
+        -not [string]::IsNullOrWhiteSpace($instanceUri.Query) -or
+        -not [string]::IsNullOrWhiteSpace($instanceUri.Fragment)) {
+        throw "External ID instance '$Instance' must be an HTTPS origin ending in '/', without a path, query string, or fragment."
+    }
+
+    $expectedInstanceHost = "$($domainMatch.Groups[1].Value.ToLowerInvariant()).ciamlogin.com"
+
+    if ($instanceUri.Host -cne $expectedInstanceHost) {
+        throw "External ID instance host '$($instanceUri.Host)' does not match domain '$Domain'. Expected '$expectedInstanceHost'."
+    }
+
+    $metadataUri = "$($instanceUri.GetLeftPart([UriPartial]::Authority))/$normalizedTenantId/v2.0/.well-known/openid-configuration"
+
+    try {
+        $metadata = Invoke-RestMethod -Method Get -Uri $metadataUri -TimeoutSec 30 -ErrorAction Stop
+    }
+    catch {
+        throw "External ID metadata could not be loaded from '$metadataUri'. Verify that ExternalId.TenantId is the tenant ID shown on the '$Domain' External ID overview, not the Azure subscription's home tenant ID. $($_.Exception.Message)"
+    }
+
+    $issuerUri = $null
+    $authorizationEndpointUri = $null
+
+    if (-not [Uri]::TryCreate([string]$metadata.issuer, [UriKind]::Absolute, [ref]$issuerUri) -or
+        $issuerUri.Host -cne "$normalizedTenantId.ciamlogin.com" -or
+        $issuerUri.AbsolutePath.Trim("/") -cne "$normalizedTenantId/v2.0") {
+        throw "External ID metadata issuer '$($metadata.issuer)' does not match configured tenant '$normalizedTenantId'."
+    }
+
+    if (-not [Uri]::TryCreate([string]$metadata.authorization_endpoint,
+                              [UriKind]::Absolute,
+                              [ref]$authorizationEndpointUri) -or
+        $authorizationEndpointUri.Host -cne $expectedInstanceHost) {
+        throw "External ID authorization endpoint '$($metadata.authorization_endpoint)' does not match configured instance '$Instance'."
+    }
+}
+
 function Get-CanonicalGitHubRepository {
     param([string]$Repository)
 
