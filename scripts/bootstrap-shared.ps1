@@ -167,6 +167,10 @@ function Test-ObjectProperty {
         return $false
     }
 
+    if ($InputObject -is [System.Collections.IDictionary]) {
+        return $InputObject.Contains($Name)
+    }
+
     return $null -ne $InputObject.PSObject.Properties[$Name]
 }
 
@@ -180,6 +184,10 @@ function Get-ObjectPropertyValue {
         return $null
     }
 
+    if ($InputObject -is [System.Collections.IDictionary]) {
+        return $InputObject[$Name]
+    }
+
     return $InputObject.PSObject.Properties[$Name].Value
 }
 
@@ -189,6 +197,11 @@ function Set-ObjectPropertyValue {
         [string]$Name,
         [object]$Value
     )
+
+    if ($InputObject -is [System.Collections.IDictionary]) {
+        $InputObject[$Name] = $Value
+        return
+    }
 
     if (Test-ObjectProperty -InputObject $InputObject -Name $Name) {
         $InputObject.PSObject.Properties[$Name].Value = $Value
