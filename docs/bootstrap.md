@@ -32,7 +32,7 @@ Do not manually edit those properties. Update `bootstrap.config.psd1`, preview t
 Install:
 
 - Git
-- PowerShell 7 or later
+- PowerShell 7 or later (preferred; Windows PowerShell 5.1 is supported)
 - Azure CLI
 - GitHub CLI
 - .NET 10 SDK
