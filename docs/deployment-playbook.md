@@ -1,6 +1,6 @@
 # Shopping CI/CD Deployment Playbook
 
-This playbook covers recurring delivery after repository bootstrap. Use the [bootstrap playbook](bootstrap.md) for one-time GitHub, Azure, and Entra configuration, and [infra/README.md](../infra/README.md) for the Bicep resource reference.
+This playbook covers recurring delivery after repository bootstrap. Start with the [end-to-end deployment runbook](end-to-end-deployment-runbook.md) for an empty subscription and first deployment. Use the [bootstrap playbook](bootstrap.md) for one-time GitHub, Azure, and Entra configuration, and [infra/README.md](../infra/README.md) for the Bicep resource reference.
 
 ## Preconditions
 
@@ -51,6 +51,27 @@ The first IaC deployment creates the platform resources and application identiti
 
 If the automatic path did not run, use **Actions -> infra -> Run workflow**, select `deploy` and `dev`, then run **Actions -> app** for `dev` after infrastructure succeeds.
 
+## Bootstrap Administrator Credential Step
+
+GitHub Actions never asks for or displays the Shopping administrator email or password. Account creation is an operator-driven External ID bootstrap action, separate from Azure infrastructure and application deployment.
+
+After the External ID applications exist, run locally while Azure CLI is signed in to the external tenant:
+
+```powershell
+.\scripts\Initialize-ShoppingBootstrap.ps1 `
+  -ConfigPath .\scripts\bootstrap.config.psd1 `
+  -Stage ExternalId `
+  -PromptForExternalIdValues
+```
+
+Enter the email at `Bootstrap application administrator email`. If the local account is missing, the same terminal displays a generated 24-character temporary password exactly once. The administrator uses it for the first sign-in and Entra requires an immediate password change. Bootstrap stores only the normalized email and object ID.
+
+Existing local accounts are adopted without password reset. A non-interactive run may adopt an account configured by email but cannot create one. The compatibility `BootstrapAdminUserObjectId` must agree with the local email identity when both are used.
+
+Run `Test-ShoppingBootstrap.ps1` afterward. It verifies that the account is enabled, has the expected local identity, and is assigned to both application `Admin` roles. This Shopping role is not a Microsoft Entra directory role.
+
+Do not put the generated password in GitHub secrets, Key Vault, configuration, state, workflow inputs, or deployment logs. This credential step is required once per installation, not once per deployment.
+
 ## Test Promotion
 
 1. Confirm the development deployment and customer sign-in.
@@ -95,9 +116,14 @@ The application workflow obtains a short-lived Azure SQL token and runs `Shoppin
 | IaC deployment fails | Inspect the Azure deployment operation, fix the cause, and rerun. The application workflow will not start after a failed automatic IaC run. |
 | Key Vault name exists in the deleted state | The infrastructure workflow recovers the purge-protected vault before ARM validation. Inspect the recovery operation if it still fails. |
 | Azure rejects `Microsoft.Cache/redis` creation | Use the repository's Azure Managed Redis template; the retired Azure Cache for Redis resource type is not supported for new deployments. |
+| Azure Managed Redis remains in `Creating` for tens of minutes | Wait while the resource and deployment operations show progress; do not dispatch an overlapping deployment. A first clean creation can take 20-40 minutes. |
+| Azure Managed Redis ends in generic `OperationFailed` | Inspect the deployment operation, delete only the failed Redis resource when it is unusable, and perform one clean retry. Escalate repeated failures with Azure correlation details. |
 | Image build or push fails | Correct the Docker build or ACR access and rerun `app`. |
 | Migration fails | Inspect migrator output and SQL connectivity or permissions before rerunning. |
 | Health check fails | Inspect Container Apps revisions, probes, logs, image-pull status, configuration, and private DNS. Rerun `app` after correction. |
+| `/health` returns 404 | Use `/healthz`; both applications map that route. |
+| Customer sign-in reports that the account does not exist | Use a customer identity, not the B2B object used to administer the external tenant. Confirm the customer flow contains Shopping.Web. |
+| A new self-service customer receives 403 on cart | Assign the current `Customer` app role manually; sign-up does not automatically add role assignments. |
 
 Use the workflow run URL and Azure deployment name from the logs as the primary incident record. Application Insights and Log Analytics contain runtime telemetry after the containers start.
 

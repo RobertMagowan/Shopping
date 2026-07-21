@@ -1,12 +1,14 @@
 # Microsoft Entra External ID Portal Reference
 
-The bootstrap scripts authoritatively manage the dedicated Shopping.Web and Shopping.Api registrations, including roles, scope, API permission, and redirect URIs. Use this guide for the explicitly manual external-tenant, user-flow, identity-provider, and user-assignment steps, and as a portal reference for inspecting generated settings.
+The bootstrap scripts authoritatively manage the dedicated Shopping.Web and Shopping.Api registrations, including roles, scope, API permission, and redirect URIs. Start with the [end-to-end deployment runbook](end-to-end-deployment-runbook.md) for a new installation. Use this guide for explicitly manual external-tenant, user-flow, identity-provider, and user-assignment steps and as a portal reference for inspecting generated settings.
 
 Do not make competing manual changes to script-owned application properties. Update `scripts/bootstrap.config.psd1`, preview the ExternalId stage with `-WhatIf`, and rerun it instead.
 
 ## 1. Create Or Select The External Tenant
 
-Use the Microsoft Entra admin center and switch to the customer/external tenant that will host the shopping users.
+Create the external tenant manually in the Microsoft Entra admin center: **Entra ID -> Overview -> Manage tenants -> Create -> External**. Select the immutable geography and link the tenant to an Azure subscription and billing resource group. The bootstrap scripts configure an existing external tenant; they do not create one.
+
+Switch to the customer/external tenant that will host the Shopping users before recording values or managing the flow.
 
 Record:
 
@@ -97,9 +99,33 @@ Recommended initial choices:
 
 Do not allow customers to choose privileged roles during sign-up.
 
+Open the created flow, select **Applications**, and add the bootstrap-managed Web application. Use **Run user flow** to confirm the sign-up link and intended providers are visible. If the link is absent, verify that this is a combined sign-up/sign-in flow rather than sign-in-only.
+
+The workforce/B2B Microsoft provider is not automatically a customer identity provider for personal Outlook accounts. Use local customer identities or configure a supported customer provider/custom federation deliberately.
+
 ## 7. Bootstrap The First Admin
 
-Manually assign the first trusted user to the `Admin` app role. After this, future privileged role management can be handled through the app when Microsoft Graph-backed admin features are implemented.
+The external-tenant administrator is not automatically a Shopping customer. A B2B administrator and a customer using the same email address are separate directory objects. Sign in to the external tenant as at least a User Administrator, then run locally:
+
+```powershell
+.\scripts\Initialize-ShoppingBootstrap.ps1 `
+  -ConfigPath .\scripts\bootstrap.config.psd1 `
+  -Stage ExternalId `
+  -PromptForExternalIdValues
+```
+
+At `Bootstrap application administrator email`, enter the customer's sign-in email. For an exact existing local email identity, bootstrap preserves the account password. Otherwise it creates the account, displays a generated temporary password once, requires a change at first sign-in, records only the email/object ID, and assigns `Admin` to both Web and API.
+
+The password appears in the local terminal, not in the Azure portal or GitHub deployment workflow. Record it immediately, do not run the creation step under transcription, and do not store it in configuration, state, source control, tickets, or workflow logs. It cannot be recovered by rerunning bootstrap.
+
+Verify afterward:
+
+```powershell
+.\scripts\Test-ShoppingBootstrap.ps1 `
+  -ConfigPath .\scripts\bootstrap.config.psd1
+```
+
+The application `Admin` role does not grant a Microsoft Entra directory role. `BootstrapAdminUserObjectId` is retained only for compatibility with existing installations.
 
 Privileged roles:
 
@@ -107,6 +133,8 @@ Privileged roles:
 - `CatalogManager`
 
 These must be assigned explicitly. They must not be self-service.
+
+The current `CustomerAccess` policy also requires `Customer` or `Admin`. Entra self-service sign-up does not automatically assign `Customer`, so new accounts need a manual role assignment until an approved application provisioning or baseline authorization change is implemented.
 
 ## 8. Configure Local User Secrets
 

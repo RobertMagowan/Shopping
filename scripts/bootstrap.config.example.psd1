@@ -32,7 +32,10 @@
             test = ""
             prod = ""
         }
-        # Optional. Use -PromptForExternalIdValues to select a tenant user interactively.
+        # Use -PromptForExternalIdValues to enter this email interactively. Bootstrap
+        # creates a missing local account and displays its temporary password once.
+        BootstrapAdminEmail = ""
+        # Compatibility override for installations that already record a user object ID.
         BootstrapAdminUserObjectId = ""
     }
 

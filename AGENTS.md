@@ -162,6 +162,8 @@ Treat `scripts/bootstrap.config.psd1` and `scripts/bootstrap-state.local.json` a
 
 Use `-PromptForExternalIdValues` only for operator-driven bootstrap runs. CI and other unattended execution must provide configuration explicitly and must not enable interactive prompts.
 
+Bootstrap-admin temporary passwords must be generated with the repository's cryptographic helper, displayed only during an interactive operator run, and never persisted to configuration, state, logs, command history, GitHub, or Key Vault.
+
 Do not independently change the resource suffix algorithm in PowerShell, GitHub configuration, or Bicep. Bootstrap-generated `RESOURCE_SUFFIX` values keep globally named Azure resources deterministic; update and verify all three locations together. Container Apps default hostnames are assigned at deployment time and must be reconciled through `ExternalId.PublicWebBaseUrls`.
 
 Treat the resolved deployment instance as immutable after infrastructure is created. Each repository installation needs a distinct `InstanceName` within a shared Azure subscription; changing it changes resource-group and global resource identities.

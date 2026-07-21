@@ -2,11 +2,30 @@
 
 This folder contains Azure infrastructure definitions for the Shopping application.
 
-For one-time Azure, GitHub, and External ID setup, see the [Shopping Environment Bootstrap Playbook](../docs/bootstrap.md). For recurring deployment and environment operations, see the [Shopping CI/CD Deployment Playbook](../docs/deployment-playbook.md).
+For a complete installation and delivery lifecycle, start with the [Shopping End-to-End Deployment Runbook](../docs/end-to-end-deployment-runbook.md). For focused details, see the [Shopping Environment Bootstrap Playbook](../docs/bootstrap.md) and [Shopping CI/CD Deployment Playbook](../docs/deployment-playbook.md).
 
 ## Deployment Model
 
 `main.bicep` is a subscription-scope deployment. It creates the environment resource group, then deploys the environment resources from `modules/environment.bicep`.
+
+`modules/environment.bicep` is a resource-group orchestrator with no direct resource declarations. Capability modules are deliberately cohesive rather than one file per Azure resource:
+
+| Module | Responsibility |
+| --- | --- |
+| `network.bicep` | NSG, VNet, reserved subnets, and optional NAT egress |
+| `container-platform.bicep` | Log Analytics, Application Insights, and Container Apps environment |
+| `identities.bicep` | Web/API user-assigned managed identities |
+| `container-registry.bicep` | ACR and environment-specific network/SKU settings |
+| `key-vault.bicep` | Key Vault and optional Web client-secret storage |
+| `storage.bicep` | Private Blob Storage and `product-images` container |
+| `sql.bicep` | Azure SQL server, database, and Entra administrator |
+| `redis.bicep` | Azure Managed Redis, database, and Key Vault connection-string secret |
+| `image-delivery.bicep` | Optional Front Door Premium private Blob origin |
+| `access-control.bicep` | ACR, Blob, and Key Vault role assignments |
+| `private-endpoints.bicep` | Private DNS, VNet links, endpoints, and zone groups |
+| `container-apps.bicep` | Internal API and public Web application definitions |
+
+Run `infra/tests/Test-BicepModules.ps1` to enforce this composition. Module outputs create normal dependencies; explicit dependencies are retained where a module uses deterministic names rather than outputs, or Container Apps must wait for RBAC assignments.
 
 The template is tenant-neutral. A third party can deploy it into their own tenant and subscription by supplying their own GitHub OIDC identity values. Bootstrap derives `deploymentInstance` from the canonical GitHub owner/repository by default; set `InstanceName` explicitly when a different stable installation label is required.
 

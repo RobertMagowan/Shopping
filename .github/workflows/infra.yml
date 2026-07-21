@@ -105,6 +105,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Test modular Bicep structure
+        shell: pwsh
+        run: ./infra/tests/Test-BicepModules.ps1
+
       - name: Build Bicep
         run: az bicep build --file "$TEMPLATE_FILE"
 

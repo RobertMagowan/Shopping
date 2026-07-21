@@ -1,6 +1,6 @@
 # Shopping Environment Bootstrap Playbook
 
-This playbook provisions the identity and repository configuration required for a new Shopping installation. It covers GitHub, an Azure subscription, and a Microsoft Entra External ID tenant. Run the read-only verifier successfully before treating an installation as ready.
+This playbook provisions the identity and repository configuration required for a new Shopping installation. It covers GitHub, an Azure subscription, and a Microsoft Entra External ID tenant. Start with the [end-to-end deployment runbook](end-to-end-deployment-runbook.md) when preparing an empty subscription; use this document as the focused bootstrap reference. Run the read-only verifier successfully before treating an installation as ready.
 
 ## Required Information
 
@@ -12,7 +12,7 @@ Collect these non-secret values before starting:
 - GitHub production reviewer username.
 - Optional stable `InstanceName`; otherwise bootstrap derives it from the canonical repository.
 - Optional public Web origins for environments using Application Gateway or custom domains.
-- Optional External ID user object ID for the initial Admin; interactive selection is also supported.
+- Email address for the initial Shopping application administrator.
 
 Create the SQL provisioning password only in memory when the script requests it. Do not place passwords or client-secret values in the configuration file.
 
@@ -25,14 +25,14 @@ The bootstrap is authoritative for these dedicated resources:
 - GitHub `dev`, `test`, and `prod` environment protection managed by the scripts.
 - The named branch ruleset in `bootstrap.config.psd1`.
 
-Do not manually edit those properties. Update `bootstrap.config.psd1`, preview the change, and rerun the appropriate stage. User flows, external identity providers, and assignments other than the optional bootstrap Admin remain manual.
+Do not manually edit those properties. Update `bootstrap.config.psd1`, preview the change, and rerun the appropriate stage. User flows, external identity providers, and assignments other than the bootstrap Admin remain manual.
 
 ## Prerequisites
 
 Install:
 
 - Git
-- PowerShell 7 or later
+- PowerShell 7 or later (preferred; Windows PowerShell 5.1 is supported)
 - Azure CLI
 - GitHub CLI
 - .NET 10 SDK
@@ -54,9 +54,11 @@ The operator requires:
 - Permission to assign the configured Azure roles at subscription scope.
 - Sufficient Azure Container Apps Consumption quota for the selected regions. Defaults vary by subscription and should be reviewed before deployment.
 - Permission to grant tenant-wide consent when `-GrantAdminConsent` is used.
-- Permission to assign the initial Admin app roles when `BootstrapAdminUserObjectId` is configured.
+- At least User Administrator permission in the External ID tenant to create the local customer administrator, plus permission to assign application roles.
 
 Public repositories support the configured CodeQL rules. Private repositories may require GitHub Advanced Security.
+
+PowerShell 7 is preferred. If `pwsh` is not installed but Windows PowerShell is available, invoke scripts with `powershell -NoProfile -ExecutionPolicy Bypass -File ...`. Use process-scoped execution-policy changes only; do not weaken machine policy globally.
 
 ## 1. Prepare The Tenants
 
@@ -104,7 +106,7 @@ The scripts write generated object IDs to:
 scripts/bootstrap-state.local.json
 ```
 
-This ignored state file contains identifiers and credential expiry metadata only. It never contains passwords or client-secret values.
+This ignored state file contains the normalized bootstrap-admin email, identifiers, and credential expiry metadata only. It never contains passwords or client-secret values.
 
 ## 4. Preview Each Stage
 
@@ -185,20 +187,25 @@ az login --tenant <external-id-tenant-id> --allow-no-subscriptions
   -Stage ExternalId `
   -RotateWebClientSecret `
   -GrantAdminConsent `
-  -ConfigureLocalUserSecrets
+  -ConfigureLocalUserSecrets `
+  -PromptForExternalIdValues
 ```
 
 Use `-RotateWebClientSecret` on the first run or when replacing the GitHub secret. The new secret is returned as a `SecureString` to the orchestrator and is never written to bootstrap state. `-ConfigureLocalUserSecrets` writes the local Web credential and non-secret identity values to the standard per-user .NET user-secrets stores; existing unrelated values are preserved.
 
-When `ExternalId.BootstrapAdminUserObjectId` is set, the script assigns that user to `Admin` on both Web and API enterprise applications. The user must already exist in the External ID tenant.
+Interactive mode prompts for `Bootstrap application administrator email`. Enter the local customer sign-in address. If that exact local `emailAddress` identity does not exist, bootstrap:
 
-To select the initial administrator without copying an object ID from the portal, add:
+- generates a cryptographically random 24-character temporary password;
+- creates an enabled local External ID account that must change its password at first sign-in;
+- displays the email and temporary password once in the local terminal;
+- checkpoints only the normalized email and user object ID;
+- assigns `Admin` on both Web and API enterprise applications.
 
-```powershell
--PromptForExternalIdValues
-```
+Record the displayed password immediately and provide it through an approved channel. It is not written to configuration, state, user secrets, GitHub, Key Vault, or application logs and cannot be recovered by rerunning bootstrap. Do not run first-account creation under PowerShell transcription, CI, or screen sharing.
 
-Interactive mode prompts for any missing External ID tenant values and lists the tenant users for numbered bootstrap Admin selection. If Microsoft Graph cannot list users, paste the user's object ID at the prompt. The selected non-secret object ID is recorded in `bootstrap-state.local.json` and reused by later bootstrap and verification runs. Omit this switch in automation.
+If the local account already exists, bootstrap adopts it without resetting its password. A non-interactive run may adopt `ExternalId.BootstrapAdminEmail`, but refuses to create a missing account. `BootstrapAdminUserObjectId` remains a compatibility override; when both values are authoritative they must resolve to the same user.
+
+The Shopping application administrator is a customer account with application roles. It is not the B2B/workforce tenant administrator and receives no Microsoft Entra directory role.
 
 ## 7. Configure GitHub
 
@@ -217,7 +224,8 @@ Run the stages together when Azure resources and External ID use the same tenant
   -SqlAdministratorPassword $sqlPassword `
   -RotateWebClientSecret `
   -GrantAdminConsent `
-  -ConfigureLocalUserSecrets
+  -ConfigureLocalUserSecrets `
+  -PromptForExternalIdValues
 ```
 
 When the tenants differ, keep the generated Web secret in memory by running all stages in one process and allowing the orchestrator to open the External ID sign-in:
@@ -230,7 +238,8 @@ When the tenants differ, keep the generated Web secret in memory by running all 
   -RotateWebClientSecret `
   -GrantAdminConsent `
   -ConfigureLocalUserSecrets `
-  -AllowInteractiveTenantSwitch
+  -AllowInteractiveTenantSwitch `
+  -PromptForExternalIdValues
 ```
 
 Separate stages remain useful for previews and non-secret reruns. Do not rotate a Web credential in a standalone ExternalId process when GitHub also needs the new value; client-secret values cannot be recovered later.
@@ -264,8 +273,11 @@ In the Entra admin center:
 
 1. Create or select the customer sign-up and sign-in user flow.
 2. Add the `<workload>-<instance>-web` application to the user flow.
-3. Configure email, Microsoft, Google, or other required identity providers.
-4. Confirm the bootstrap Admin user can sign in.
+3. Configure email, Google, or other customer identity providers. Personal Microsoft accounts require a deliberately configured customer federation; the workforce/B2B Microsoft provider is not the same feature.
+4. Run the interactive External ID bootstrap command in section 6 to create or adopt the local customer administrator.
+5. Sign in with the displayed temporary password and complete the mandatory password change.
+
+Self-service sign-up creates a customer account but does not automatically assign the current `Customer` app role. Until an application provisioning flow or baseline-customer authorization change is implemented, newly registered customers require a manual `Customer` role assignment before using role-protected cart endpoints.
 
 After the first application deployment, copy each reported Container Apps Web origin into `ExternalId.PublicWebBaseUrls`, then rerun `-Stage ExternalId`. Repeat this when a custom domain or public gateway origin changes. Do not add callbacks only in the portal because the script intentionally replaces the complete redirect URI list.
 
@@ -283,7 +295,7 @@ The verifier is read-only. It checks:
 - Canonical repository casing, resolved installation name, and non-secret state.
 - Federated OIDC subjects and Azure RBAC.
 - Web/API roles, redirect URIs, API scope, and admin consent.
-- Optional bootstrap Admin assignments.
+- Bootstrap Admin enabled status, local email identity, object ID, and both application-role assignments.
 - GitHub environment variables, deterministic resource suffixes, and secret presence.
 - Production reviewer and branch restrictions.
 - The managed branch ruleset and exact required status checks.
