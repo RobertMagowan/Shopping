@@ -1,6 +1,6 @@
 # Shopping Environment Bootstrap Playbook
 
-This playbook provisions the identity and repository configuration required for a new Shopping installation. It covers GitHub, an Azure subscription, and a Microsoft Entra External ID tenant. Run the read-only verifier successfully before treating an installation as ready.
+This playbook provisions the identity and repository configuration required for a new Shopping installation. It covers GitHub, an Azure subscription, and a Microsoft Entra External ID tenant. Start with the [end-to-end deployment runbook](end-to-end-deployment-runbook.md) when preparing an empty subscription; use this document as the focused bootstrap reference. Run the read-only verifier successfully before treating an installation as ready.
 
 ## Required Information
 
@@ -57,6 +57,8 @@ The operator requires:
 - Permission to assign the initial Admin app roles when `BootstrapAdminUserObjectId` is configured.
 
 Public repositories support the configured CodeQL rules. Private repositories may require GitHub Advanced Security.
+
+PowerShell 7 is preferred. If `pwsh` is not installed but Windows PowerShell is available, invoke scripts with `powershell -NoProfile -ExecutionPolicy Bypass -File ...`. Use process-scoped execution-policy changes only; do not weaken machine policy globally.
 
 ## 1. Prepare The Tenants
 
@@ -190,7 +192,7 @@ az login --tenant <external-id-tenant-id> --allow-no-subscriptions
 
 Use `-RotateWebClientSecret` on the first run or when replacing the GitHub secret. The new secret is returned as a `SecureString` to the orchestrator and is never written to bootstrap state. `-ConfigureLocalUserSecrets` writes the local Web credential and non-secret identity values to the standard per-user .NET user-secrets stores; existing unrelated values are preserved.
 
-When `ExternalId.BootstrapAdminUserObjectId` is set, the script assigns that user to `Admin` on both Web and API enterprise applications. The user must already exist in the External ID tenant.
+When `ExternalId.BootstrapAdminUserObjectId` is set, the script assigns that user to `Admin` on both Web and API enterprise applications. The user must already exist as a **customer identity** in the External ID tenant. Do not select the B2B/workforce object used to administer the tenant; a tenant administrator and an application customer using the same email address are separate directory objects.
 
 To select the initial administrator without copying an object ID from the portal, add:
 
@@ -264,8 +266,11 @@ In the Entra admin center:
 
 1. Create or select the customer sign-up and sign-in user flow.
 2. Add the `<workload>-<instance>-web` application to the user flow.
-3. Configure email, Microsoft, Google, or other required identity providers.
-4. Confirm the bootstrap Admin user can sign in.
+3. Configure email, Google, or other customer identity providers. Personal Microsoft accounts require a deliberately configured customer federation; the workforce/B2B Microsoft provider is not the same feature.
+4. Create a local customer bootstrap Admin when a trusted customer object does not already exist, copy its temporary password directly to the operator, and configure its object ID.
+5. Confirm the bootstrap Admin customer can sign in and change the temporary password.
+
+Self-service sign-up creates a customer account but does not automatically assign the current `Customer` app role. Until an application provisioning flow or baseline-customer authorization change is implemented, newly registered customers require a manual `Customer` role assignment before using role-protected cart endpoints.
 
 After the first application deployment, copy each reported Container Apps Web origin into `ExternalId.PublicWebBaseUrls`, then rerun `-Stage ExternalId`. Repeat this when a custom domain or public gateway origin changes. Do not add callbacks only in the portal because the script intentionally replaces the complete redirect URI list.
 

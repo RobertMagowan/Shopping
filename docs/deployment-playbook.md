@@ -1,6 +1,6 @@
 # Shopping CI/CD Deployment Playbook
 
-This playbook covers recurring delivery after repository bootstrap. Use the [bootstrap playbook](bootstrap.md) for one-time GitHub, Azure, and Entra configuration, and [infra/README.md](../infra/README.md) for the Bicep resource reference.
+This playbook covers recurring delivery after repository bootstrap. Start with the [end-to-end deployment runbook](end-to-end-deployment-runbook.md) for an empty subscription and first deployment. Use the [bootstrap playbook](bootstrap.md) for one-time GitHub, Azure, and Entra configuration, and [infra/README.md](../infra/README.md) for the Bicep resource reference.
 
 ## Preconditions
 
@@ -95,9 +95,14 @@ The application workflow obtains a short-lived Azure SQL token and runs `Shoppin
 | IaC deployment fails | Inspect the Azure deployment operation, fix the cause, and rerun. The application workflow will not start after a failed automatic IaC run. |
 | Key Vault name exists in the deleted state | The infrastructure workflow recovers the purge-protected vault before ARM validation. Inspect the recovery operation if it still fails. |
 | Azure rejects `Microsoft.Cache/redis` creation | Use the repository's Azure Managed Redis template; the retired Azure Cache for Redis resource type is not supported for new deployments. |
+| Azure Managed Redis remains in `Creating` for tens of minutes | Wait while the resource and deployment operations show progress; do not dispatch an overlapping deployment. A first clean creation can take 20-40 minutes. |
+| Azure Managed Redis ends in generic `OperationFailed` | Inspect the deployment operation, delete only the failed Redis resource when it is unusable, and perform one clean retry. Escalate repeated failures with Azure correlation details. |
 | Image build or push fails | Correct the Docker build or ACR access and rerun `app`. |
 | Migration fails | Inspect migrator output and SQL connectivity or permissions before rerunning. |
 | Health check fails | Inspect Container Apps revisions, probes, logs, image-pull status, configuration, and private DNS. Rerun `app` after correction. |
+| `/health` returns 404 | Use `/healthz`; both applications map that route. |
+| Customer sign-in reports that the account does not exist | Use a customer identity, not the B2B object used to administer the external tenant. Confirm the customer flow contains Shopping.Web. |
+| A new self-service customer receives 403 on cart | Assign the current `Customer` app role manually; sign-up does not automatically add role assignments. |
 
 Use the workflow run URL and Azure deployment name from the logs as the primary incident record. Application Insights and Log Analytics contain runtime telemetry after the containers start.
 

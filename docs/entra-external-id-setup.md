@@ -1,12 +1,14 @@
 # Microsoft Entra External ID Portal Reference
 
-The bootstrap scripts authoritatively manage the dedicated Shopping.Web and Shopping.Api registrations, including roles, scope, API permission, and redirect URIs. Use this guide for the explicitly manual external-tenant, user-flow, identity-provider, and user-assignment steps, and as a portal reference for inspecting generated settings.
+The bootstrap scripts authoritatively manage the dedicated Shopping.Web and Shopping.Api registrations, including roles, scope, API permission, and redirect URIs. Start with the [end-to-end deployment runbook](end-to-end-deployment-runbook.md) for a new installation. Use this guide for explicitly manual external-tenant, user-flow, identity-provider, and user-assignment steps and as a portal reference for inspecting generated settings.
 
 Do not make competing manual changes to script-owned application properties. Update `scripts/bootstrap.config.psd1`, preview the ExternalId stage with `-WhatIf`, and rerun it instead.
 
 ## 1. Create Or Select The External Tenant
 
-Use the Microsoft Entra admin center and switch to the customer/external tenant that will host the shopping users.
+Create the external tenant manually in the Microsoft Entra admin center: **Entra ID -> Overview -> Manage tenants -> Create -> External**. Select the immutable geography and link the tenant to an Azure subscription and billing resource group. The bootstrap scripts configure an existing external tenant; they do not create one.
+
+Switch to the customer/external tenant that will host the Shopping users before recording values or managing the flow.
 
 Record:
 
@@ -97,9 +99,24 @@ Recommended initial choices:
 
 Do not allow customers to choose privileged roles during sign-up.
 
+Open the created flow, select **Applications**, and add the bootstrap-managed Web application. Use **Run user flow** to confirm the sign-up link and intended providers are visible. If the link is absent, verify that this is a combined sign-up/sign-in flow rather than sign-in-only.
+
+The workforce/B2B Microsoft provider is not automatically a customer identity provider for personal Outlook accounts. Use local customer identities or configure a supported customer provider/custom federation deliberately.
+
 ## 7. Bootstrap The First Admin
 
-Manually assign the first trusted user to the `Admin` app role. After this, future privileged role management can be handled through the app when Microsoft Graph-backed admin features are implemented.
+The external-tenant administrator is not automatically a Shopping customer. A B2B administrator and a customer using the same email address are separate directory objects.
+
+Create the first trusted customer in the external tenant:
+
+1. Go to **Entra ID -> Users -> New user -> Create new external user**.
+2. Under **Identities**, select **Email** and enter the customer sign-in address.
+3. Enter the display name and copy the generated temporary password directly to the intended operator.
+4. Require password change on first sign-in and create the customer.
+5. Copy the customer object's Object ID to `ExternalId.BootstrapAdminUserObjectId` in the ignored bootstrap configuration.
+6. Rerun `Initialize-ShoppingBootstrap.ps1 -Stage ExternalId` to assign `Admin` to both Web and API.
+
+Do not place the temporary password in bootstrap configuration or state. After this, future privileged role management can be handled through the app when Microsoft Graph-backed admin features are implemented.
 
 Privileged roles:
 
@@ -107,6 +124,8 @@ Privileged roles:
 - `CatalogManager`
 
 These must be assigned explicitly. They must not be self-service.
+
+The current `CustomerAccess` policy also requires `Customer` or `Admin`. Entra self-service sign-up does not automatically assign `Customer`, so new accounts need a manual role assignment until an approved application provisioning or baseline authorization change is implemented.
 
 ## 8. Configure Local User Secrets
 

@@ -2,6 +2,8 @@
 
 UK-focused public shopping site built with Blazor Web App, ASP.NET Core REST APIs, and Microsoft Entra External ID.
 
+For a new Azure/GitHub/External ID installation and the complete feature-to-production lifecycle, start with the [Shopping End-to-End Deployment Runbook](docs/end-to-end-deployment-runbook.md). Use the focused [bootstrap](docs/bootstrap.md), [External ID](docs/entra-external-id-setup.md), [CI/CD](docs/deployment-playbook.md), and [infrastructure](infra/README.md) references for component-level details.
+
 ## Local development services
 
 The development configuration expects these Docker-hosted emulators:
@@ -81,7 +83,7 @@ The initial migration seeds sample products, prices, availability, and product i
 
 All environments, including local development, use Microsoft Entra External ID. Replace the placeholder `EntraExternalId` values with the tenant and application registrations you configure manually.
 
-Follow the full manual setup guide in [docs/entra-external-id-setup.md](docs/entra-external-id-setup.md).
+Follow the complete [deployment runbook](docs/end-to-end-deployment-runbook.md) for a new installation and the [External ID portal reference](docs/entra-external-id-setup.md) for manual tenant and user-flow steps.
 
 The non-secret Entra values for local development live in `appsettings.Development.json`. Use user secrets only for secret values:
 
