@@ -87,6 +87,7 @@ $script:graphUsers = @(
     }
 )
 $script:capturedCreateBody = $null
+$script:createRequestCount = 0
 
 function Invoke-AzRestJson {
     param(
@@ -96,10 +97,16 @@ function Invoke-AzRestJson {
     )
 
     if ($Method -eq 'GET') {
+        if ($Uri -match '/users/([^?]+)') {
+            $objectId = $Matches[1]
+            return @($script:graphUsers | Where-Object id -eq $objectId) | Select-Object -First 1
+        }
+
         return [pscustomobject]@{ value = $script:graphUsers }
     }
 
     if ($Method -eq 'POST') {
+        $script:createRequestCount++
         $script:capturedCreateBody = $Body
         return [pscustomobject]@{
             id = '33333333-3333-3333-3333-333333333333'
@@ -150,5 +157,60 @@ Assert-Equal -Actual $script:capturedCreateBody.passwordPolicies -Expected 'Disa
 Assert-Equal -Actual $script:capturedCreateBody.passwordProfile.password -Expected $temporaryPassword -Message 'Temporary password was not sent.'
 Assert-Equal -Actual $script:capturedCreateBody.passwordProfile.forceChangePasswordNextSignIn -Expected $true -Message 'First-login password change is not required.'
 Assert-Equal -Actual $script:capturedCreateBody.identities[0].issuerAssignedId -Expected 'new.admin@example.com' -Message 'Email identity is incorrect.'
+
+$existingResolution = Resolve-BootstrapAdminLocalUser `
+    -Email 'admin.user@example.com' `
+    -Domain 'shopping1970.onmicrosoft.com' `
+    -ExpectedUserObjectId '11111111-1111-1111-1111-111111111111'
+
+Assert-Equal -Actual $existingResolution.User.id -Expected '11111111-1111-1111-1111-111111111111' -Message 'Existing user was not adopted.'
+Assert-Equal -Actual $existingResolution.Created -Expected $false -Message 'Existing user was reported as created.'
+
+Assert-Throws `
+    -Action {
+        Resolve-BootstrapAdminLocalUser `
+            -Email 'admin.user@example.com' `
+            -Domain 'shopping1970.onmicrosoft.com' `
+            -ExpectedUserObjectId '22222222-2222-2222-2222-222222222222'
+    } `
+    -ExpectedMessage 'does not match configured Bootstrap Admin object ID'
+
+Assert-Throws `
+    -Action {
+        Resolve-BootstrapAdminLocalUser `
+            -Email 'missing@example.com' `
+            -Domain 'shopping1970.onmicrosoft.com'
+    } `
+    -ExpectedMessage 'requires an interactive bootstrap run'
+
+$createRequestsBeforeWhatIf = $script:createRequestCount
+$whatIfResolution = Resolve-BootstrapAdminLocalUser `
+    -Email 'whatif@example.com' `
+    -Domain 'shopping1970.onmicrosoft.com' `
+    -AllowCreate `
+    -WhatIf
+
+Assert-Equal -Actual $script:createRequestCount -Expected $createRequestsBeforeWhatIf -Message 'WhatIf created a Graph user.'
+
+if ($null -ne $whatIfResolution.TemporaryPassword) {
+    throw 'WhatIf generated a temporary password.'
+}
+
+$createdResolution = Resolve-BootstrapAdminLocalUser `
+    -Email 'created@example.com' `
+    -Domain 'shopping1970.onmicrosoft.com' `
+    -AllowCreate `
+    -Confirm:$false
+
+Assert-Equal -Actual $createdResolution.User.id -Expected '33333333-3333-3333-3333-333333333333' -Message 'Created user was not returned.'
+Assert-Equal -Actual $createdResolution.Created -Expected $true -Message 'Created user was not identified as new.'
+
+if ($createdResolution.TemporaryPassword -isnot [Security.SecureString]) {
+    throw 'Created user password was not returned as a SecureString.'
+}
+
+$createdPassword = ConvertFrom-SecureStringValue -SecureValue $createdResolution.TemporaryPassword
+Assert-Equal -Actual $script:capturedCreateBody.passwordProfile.password -Expected $createdPassword -Message 'Generated password did not reach Graph.'
+$createdPassword = $null
 
 Write-Host 'External ID bootstrap administrator helper tests passed.'

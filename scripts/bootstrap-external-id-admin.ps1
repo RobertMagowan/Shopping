@@ -177,3 +177,92 @@ function New-BootstrapAdminLocalUser {
 
     return $user
 }
+
+function Resolve-BootstrapAdminLocalUser {
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = "Medium")]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Email,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Domain,
+
+        [string]$ExpectedUserObjectId,
+
+        [switch]$AllowCreate
+    )
+
+    $normalizedEmail = Normalize-BootstrapAdminEmail -Email $Email
+    $user = Get-BootstrapAdminLocalUser `
+        -Email $normalizedEmail `
+        -Domain $Domain
+
+    if ($null -ne $user) {
+        if (-not [string]::IsNullOrWhiteSpace($ExpectedUserObjectId) -and
+            -not [string]::Equals([string]$user.id, $ExpectedUserObjectId, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "External ID user '$($user.id)' for '$normalizedEmail' does not match configured Bootstrap Admin object ID '$ExpectedUserObjectId'."
+        }
+
+        return [pscustomobject]@{
+            Email = $normalizedEmail
+            User = $user
+            Created = $false
+            TemporaryPassword = $null
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($ExpectedUserObjectId)) {
+        throw "No local External ID user for '$normalizedEmail' matches configured Bootstrap Admin object ID '$ExpectedUserObjectId'."
+    }
+
+    if (-not $AllowCreate) {
+        throw "Creating Bootstrap Admin '$normalizedEmail' requires an interactive bootstrap run. Rerun Initialize-ShoppingBootstrap.ps1 with -Stage ExternalId -PromptForExternalIdValues."
+    }
+
+    if (-not $PSCmdlet.ShouldProcess($normalizedEmail, "Create local External ID Bootstrap Admin with a generated temporary password")) {
+        return [pscustomobject]@{
+            Email = $normalizedEmail
+            User = $null
+            Created = $false
+            TemporaryPassword = $null
+        }
+    }
+
+    $temporaryPassword = New-BootstrapAdminTemporaryPassword
+
+    try {
+        $user = New-BootstrapAdminLocalUser `
+            -Email $normalizedEmail `
+            -Domain $Domain `
+            -TemporaryPassword $temporaryPassword
+    }
+    catch {
+        $user = Get-BootstrapAdminLocalUser `
+            -Email $normalizedEmail `
+            -Domain $Domain
+
+        if ($null -ne $user) {
+            return [pscustomobject]@{
+                Email = $normalizedEmail
+                User = $user
+                Created = $false
+                TemporaryPassword = $null
+            }
+        }
+
+        throw
+    }
+
+    $secureTemporaryPassword = ConvertTo-SecureString `
+        -String $temporaryPassword `
+        -AsPlainText `
+        -Force
+    $temporaryPassword = $null
+
+    return [pscustomobject]@{
+        Email = $normalizedEmail
+        User = $user
+        Created = $true
+        TemporaryPassword = $secureTemporaryPassword
+    }
+}

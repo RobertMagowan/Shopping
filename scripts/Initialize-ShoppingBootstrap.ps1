@@ -24,6 +24,7 @@ param(
 )
 
 . "$PSScriptRoot\bootstrap-shared.ps1"
+. "$PSScriptRoot\bootstrap-external-id-admin.ps1"
 
 function Assert-ConfigValue {
     param(
@@ -79,73 +80,44 @@ function Read-RequiredExternalIdValue {
     return $value.Trim()
 }
 
-function Select-BootstrapAdminUser {
-    param([string]$CurrentUserObjectId)
+function Read-BootstrapAdminEmail {
+    param([string]$CurrentEmail)
 
-    if (-not [string]::IsNullOrWhiteSpace($CurrentUserObjectId)) {
-        $keepCurrent = Read-Host "Bootstrap Admin is '$CurrentUserObjectId'. Press Enter to keep it, or type 'change'"
+    $prompt = if ([string]::IsNullOrWhiteSpace($CurrentEmail)) {
+        "Bootstrap application administrator email"
+    }
+    else {
+        "Bootstrap application administrator email [$CurrentEmail] (press Enter to keep)"
+    }
+    $email = Read-Host $prompt
 
-        if ([string]::IsNullOrWhiteSpace($keepCurrent)) {
-            return $CurrentUserObjectId
-        }
+    if ([string]::IsNullOrWhiteSpace($email)) {
+        $email = $CurrentEmail
     }
 
-    $users = @()
+    if ([string]::IsNullOrWhiteSpace($email)) {
+        throw "Bootstrap application administrator email is required in interactive External ID bootstrap."
+    }
+
+    return Normalize-BootstrapAdminEmail -Email $email
+}
+
+function Write-BootstrapAdminTemporaryCredential {
+    param(
+        [string]$Email,
+        [Security.SecureString]$TemporaryPassword
+    )
+
+    $plainTemporaryPassword = ConvertFrom-SecureStringValue -SecureValue $TemporaryPassword
 
     try {
-        $response = Invoke-AzRestJson `
-            -Method GET `
-            -Uri "https://graph.microsoft.com/v1.0/users?`$select=id,displayName,userPrincipalName,identities"
-        $users = @($response.value | Sort-Object displayName, userPrincipalName)
+        Write-Warning "A local External ID Bootstrap Admin was created. Record this temporary credential now; it is not stored or recoverable from bootstrap state."
+        Write-Host "Bootstrap Admin email: $Email"
+        Write-Host "Temporary password: $plainTemporaryPassword"
+        Write-Host "Microsoft Entra will require a password change at first sign-in."
     }
-    catch {
-        Write-Warning "Microsoft Graph could not list External ID users: $($_.Exception.Message)"
-    }
-
-    if ($users.Count -gt 0) {
-        Write-Host "External ID users:"
-
-        for ($index = 0; $index -lt $users.Count; $index++) {
-            $user = $users[$index]
-            $signInIdentifiers = @(
-                $user.identities |
-                    ForEach-Object { $_.issuerAssignedId } |
-                    Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
-                    Sort-Object -Unique
-            )
-            $signIn = if ($signInIdentifiers.Count -gt 0) {
-                $signInIdentifiers -join ", "
-            }
-            else {
-                $user.userPrincipalName
-            }
-
-            Write-Host ("  [{0}] {1} | {2} | {3}" -f ($index + 1), $user.displayName, $signIn, $user.id)
-        }
-    }
-
-    while ($true) {
-        $selection = Read-Host "Select the bootstrap Admin number, paste a user object ID, or press Enter to skip"
-
-        if ([string]::IsNullOrWhiteSpace($selection)) {
-            return ""
-        }
-
-        $selectedIndex = 0
-
-        if ([int]::TryParse($selection, [ref]$selectedIndex) -and
-            $selectedIndex -ge 1 -and
-            $selectedIndex -le $users.Count) {
-            return [string]$users[$selectedIndex - 1].id
-        }
-
-        $userObjectId = [Guid]::Empty
-
-        if ([Guid]::TryParse($selection, [ref]$userObjectId)) {
-            return $userObjectId.ToString()
-        }
-
-        Write-Warning "Enter a listed number, a valid GUID user object ID, or press Enter."
+    finally {
+        $plainTemporaryPassword = $null
     }
 }
 
@@ -403,8 +375,19 @@ if ($runExternalId) {
     }
 
     $bootstrapState = Read-BootstrapState -Path $StatePath
-    $externalIdState = Get-ObjectPropertyValue -InputObject $bootstrapState -Name "externalId"
-    $bootstrapAdminUserObjectId = [string]$config.ExternalId.BootstrapAdminUserObjectId
+    $externalIdState = Get-OrAddStateSection -State $bootstrapState -Name "externalId"
+    $bootstrapAdminEmail = [string](Get-ObjectPropertyValue `
+        -InputObject $config.ExternalId `
+        -Name "BootstrapAdminEmail")
+    $bootstrapAdminUserObjectId = [string](Get-ObjectPropertyValue `
+        -InputObject $config.ExternalId `
+        -Name "BootstrapAdminUserObjectId")
+
+    if ([string]::IsNullOrWhiteSpace($bootstrapAdminEmail)) {
+        $bootstrapAdminEmail = [string](Get-ObjectPropertyValue `
+            -InputObject $externalIdState `
+            -Name "bootstrapAdminEmail")
+    }
 
     if ([string]::IsNullOrWhiteSpace($bootstrapAdminUserObjectId)) {
         $bootstrapAdminUserObjectId = [string](Get-ObjectPropertyValue `
@@ -413,8 +396,41 @@ if ($runExternalId) {
     }
 
     if ($PromptForExternalIdValues) {
-        $bootstrapAdminUserObjectId = Select-BootstrapAdminUser `
-            -CurrentUserObjectId $bootstrapAdminUserObjectId
+        $bootstrapAdminEmail = Read-BootstrapAdminEmail `
+            -CurrentEmail $bootstrapAdminEmail
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($bootstrapAdminEmail)) {
+        $bootstrapAdminResolution = Resolve-BootstrapAdminLocalUser `
+            -Email $bootstrapAdminEmail `
+            -Domain $config.ExternalId.Domain `
+            -ExpectedUserObjectId $bootstrapAdminUserObjectId `
+            -AllowCreate:$PromptForExternalIdValues `
+            -WhatIf:$WhatIfPreference
+        $bootstrapAdminEmail = $bootstrapAdminResolution.Email
+
+        if ($null -ne $bootstrapAdminResolution.TemporaryPassword) {
+            Write-BootstrapAdminTemporaryCredential `
+                -Email $bootstrapAdminEmail `
+                -TemporaryPassword $bootstrapAdminResolution.TemporaryPassword
+            $bootstrapAdminResolution.TemporaryPassword = $null
+        }
+
+        if ($null -ne $bootstrapAdminResolution.User) {
+            $bootstrapAdminUserObjectId = [string]$bootstrapAdminResolution.User.id
+            Set-ObjectPropertyValue `
+                -InputObject $externalIdState `
+                -Name "bootstrapAdminEmail" `
+                -Value $bootstrapAdminEmail
+            Set-ObjectPropertyValue `
+                -InputObject $externalIdState `
+                -Name "bootstrapAdminUserObjectId" `
+                -Value $bootstrapAdminUserObjectId
+
+            if ($PSCmdlet.ShouldProcess($StatePath, "Checkpoint Bootstrap Admin identity without credentials")) {
+                Save-BootstrapState -State $bootstrapState -Path $StatePath
+            }
+        }
     }
 
     $parameters = @{
@@ -427,6 +443,7 @@ if ($runExternalId) {
         StatePath = $StatePath
         RotateWebClientSecret = $RotateWebClientSecret
         GrantAdminConsent = $GrantAdminConsent
+        BootstrapAdminEmail = $bootstrapAdminEmail
         BootstrapAdminUserObjectId = $bootstrapAdminUserObjectId
         PassThru = $true
         WhatIf = $WhatIfPreference

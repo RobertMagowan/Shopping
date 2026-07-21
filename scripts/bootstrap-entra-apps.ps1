@@ -26,6 +26,8 @@ param(
 
     [switch]$GrantAdminConsent,
 
+    [string]$BootstrapAdminEmail,
+
     [string]$BootstrapAdminUserObjectId,
 
     [switch]$PassThru
@@ -351,6 +353,10 @@ if ($null -ne $webSp) {
     Set-ObjectPropertyValue -InputObject $externalIdState -Name "webServicePrincipalObjectId" -Value $webSp.id
 }
 
+if (-not [string]::IsNullOrWhiteSpace($BootstrapAdminEmail)) {
+    Set-ObjectPropertyValue -InputObject $externalIdState -Name "bootstrapAdminEmail" -Value $BootstrapAdminEmail
+}
+
 if (-not [string]::IsNullOrWhiteSpace($BootstrapAdminUserObjectId)) {
     Set-ObjectPropertyValue -InputObject $externalIdState -Name "bootstrapAdminUserObjectId" -Value $BootstrapAdminUserObjectId
 }
@@ -374,6 +380,8 @@ $result = [pscustomobject]@{
     WebApplicationClientId = $webApp.appId
     WebClientSecret = $webClientSecret
     WebClientCredentialExpiresUtc = Get-ObjectPropertyValue -InputObject $currentCredential -Name "endDateTime"
+    BootstrapAdminEmail = $BootstrapAdminEmail
+    BootstrapAdminUserObjectId = $BootstrapAdminUserObjectId
 }
 
 Write-Host "Entra application bootstrap completed. The state file contains identifiers only, never credential values."
@@ -383,7 +391,10 @@ if (-not $GrantAdminConsent) {
 }
 
 if ([string]::IsNullOrWhiteSpace($BootstrapAdminUserObjectId)) {
-    Write-Host "No bootstrap Admin assignment was requested. Pass -BootstrapAdminUserObjectId when the initial administrator is known."
+    Write-Host "No Bootstrap Admin assignment was requested. Use -PromptForExternalIdValues with Initialize-ShoppingBootstrap.ps1 to create or adopt the initial administrator."
+}
+else {
+    Write-Host "Bootstrap Admin '$BootstrapAdminUserObjectId' is assigned to the Web and API Admin roles."
 }
 
 if ($PassThru) {
