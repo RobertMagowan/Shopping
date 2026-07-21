@@ -17,7 +17,7 @@ The emulator-only connection values live in `src/Shopping.Api/appsettings.Develo
 Production should use managed identity, Key Vault, and real Azure resource endpoints.
 The deployed relational database target is Azure SQL.
 
-`Shopping.Web` uses Redis as the distributed cache for Microsoft.Identity.Web token acquisition. Local development uses the Docker Redis endpoint `localhost:6379`; production should point the same `ShoppingAzure:Redis:ConnectionString` setting to Azure Cache for Redis or the chosen managed Redis service.
+`Shopping.Web` uses Redis as the distributed cache for Microsoft.Identity.Web token acquisition. Local development uses the Docker Redis endpoint `localhost:6379`; Azure environments use Azure Managed Redis through the same `ShoppingAzure:Redis:ConnectionString` setting.
 
 The SQL Server connection string is secret-bearing in local Docker setups because it normally includes credentials. Store it in `Shopping.Api` user secrets:
 

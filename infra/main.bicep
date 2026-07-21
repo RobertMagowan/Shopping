@@ -88,23 +88,8 @@ param containerImageTag string = 'bootstrap'
 @description('Azure SQL database SKU name.')
 param sqlDatabaseSkuName string = environmentName == 'prod' ? 'GP_Gen5_2' : 'Basic'
 
-@description('Azure Cache for Redis SKU name.')
-@allowed([
-  'Basic'
-  'Standard'
-])
-param redisSkuName string = environmentName == 'prod' ? 'Standard' : 'Basic'
-
-@description('Azure Cache for Redis family.')
-@allowed([
-  'C'
-])
-param redisSkuFamily string = 'C'
-
-@description('Azure Cache for Redis capacity.')
-@minValue(0)
-@maxValue(6)
-param redisSkuCapacity int = environmentName == 'prod' ? 1 : 0
+@description('Azure Managed Redis SKU name.')
+param managedRedisSkuName string = 'Balanced_B0'
 
 @description('Deploy Azure Front Door Premium for cached product image delivery through a private Blob origin.')
 param enableFrontDoorImageDelivery bool = environmentName == 'prod'
@@ -173,9 +158,7 @@ module environmentResources 'modules/environment.bicep' = {
     containerRegistrySkuName: containerRegistrySkuName
     containerImageTag: containerImageTag
     sqlDatabaseSkuName: sqlDatabaseSkuName
-    redisSkuName: redisSkuName
-    redisSkuFamily: redisSkuFamily
-    redisSkuCapacity: redisSkuCapacity
+    managedRedisSkuName: managedRedisSkuName
     enableFrontDoorImageDelivery: enableFrontDoorImageDelivery
     productImageSasLifetimeMinutes: productImageSasLifetimeMinutes
     entraExternalIdInstance: entraExternalIdInstance

@@ -93,6 +93,8 @@ The application workflow obtains a short-lived Azure SQL token and runs `Shoppin
 | IaC validation or `what-if` fails | Correct Bicep or environment configuration and rerun `infra`. |
 | Container Apps reports a managed-environment or consumption-core quota error | In Azure **Quotas**, select **Azure Container Apps**, review the target region and subscription limits, and request only the required increase. Rerun `infra` after approval. |
 | IaC deployment fails | Inspect the Azure deployment operation, fix the cause, and rerun. The application workflow will not start after a failed automatic IaC run. |
+| Key Vault name exists in the deleted state | The infrastructure workflow recovers the purge-protected vault before ARM validation. Inspect the recovery operation if it still fails. |
+| Azure rejects `Microsoft.Cache/redis` creation | Use the repository's Azure Managed Redis template; the retired Azure Cache for Redis resource type is not supported for new deployments. |
 | Image build or push fails | Correct the Docker build or ACR access and rerun `app`. |
 | Migration fails | Inspect migrator output and SQL connectivity or permissions before rerunning. |
 | Health check fails | Inspect Container Apps revisions, probes, logs, image-pull status, configuration, and private DNS. Rerun `app` after correction. |

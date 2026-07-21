@@ -52,14 +52,8 @@ param containerImageTag string
 @description('Azure SQL database SKU name.')
 param sqlDatabaseSkuName string
 
-@description('Azure Cache for Redis SKU name.')
-param redisSkuName string
-
-@description('Azure Cache for Redis family.')
-param redisSkuFamily string
-
-@description('Azure Cache for Redis capacity.')
-param redisSkuCapacity int
+@description('Azure Managed Redis SKU name.')
+param managedRedisSkuName string
 
 @description('Deploy Azure Front Door Premium for cached product image delivery through a private Blob origin.')
 param enableFrontDoorImageDelivery bool
@@ -131,7 +125,7 @@ var privateDnsZoneNames = [
   blobPrivateDnsZoneName
   sqlPrivateDnsZoneName
   'privatelink.vaultcore.azure.net'
-  'privatelink.redis.cache.windows.net'
+  'privatelink.redis.azure.net'
   'privatelink.azurecr.io'
 ]
 
@@ -481,19 +475,30 @@ resource sqlEntraAdministrator 'Microsoft.Sql/servers/administrators@2023-08-01-
   }
 }
 
-resource redis 'Microsoft.Cache/redis@2023-08-01' = {
+resource redis 'Microsoft.Cache/redisEnterprise@2025-07-01' = {
   name: redisName
   location: location
   tags: tags
+  sku: {
+    name: managedRedisSkuName
+  }
   properties: {
-    sku: {
-      name: redisSkuName
-      family: redisSkuFamily
-      capacity: redisSkuCapacity
-    }
-    enableNonSslPort: false
+    encryption: {}
+    highAvailability: environmentName == 'prod' ? 'Enabled' : 'Disabled'
     minimumTlsVersion: '1.2'
     publicNetworkAccess: enablePrivateEndpoints ? 'Disabled' : 'Enabled'
+  }
+}
+
+resource redisDatabase 'Microsoft.Cache/redisEnterprise/databases@2025-07-01' = {
+  parent: redis
+  name: 'default'
+  properties: {
+    accessKeysAuthentication: 'Enabled'
+    clientProtocol: 'Encrypted'
+    clusteringPolicy: 'NoCluster'
+    evictionPolicy: 'AllKeysLRU'
+    port: 10000
   }
 }
 
@@ -501,7 +506,7 @@ resource redisConnectionStringSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-
   parent: keyVault
   name: 'shopping-web-redis-connection-string'
   properties: {
-    value: '${redis.properties.hostName}:6380,password=${redis.listKeys().primaryKey},ssl=True,abortConnect=False'
+    value: '${redis.properties.hostName}:${redisDatabase.properties.port},password=${redisDatabase.listKeys().primaryKey},ssl=True,abortConnect=False'
   }
 }
 
@@ -990,7 +995,7 @@ resource redisPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = 
         properties: {
           privateLinkServiceId: redis.id
           groupIds: [
-            'redisCache'
+            'redisEnterprise'
           ]
         }
       }
