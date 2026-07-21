@@ -102,6 +102,45 @@ Use symptom, diagnosis, cause, recovery, and prevention entries for the failures
 
 The current customer-role behavior must be documented as a limitation unless code changes implement authenticated-user baseline access. Documentation must not claim that self-service sign-up automatically assigns an Entra app role.
 
+## Bicep Modularization
+
+Refactor the resource-group template into capability-based local modules while preserving the public contract of `infra/main.bicep`, the environment parameter files, deterministic resource names, existing outputs, and deployed behavior.
+
+Use these module boundaries:
+
+- `network.bicep`: NSG, VNet, reserved subnets, optional NAT Gateway, and subnet outputs.
+- `container-platform.bicep`: Log Analytics, Application Insights, and the Container Apps managed environment.
+- `identities.bicep`: Web and API user-assigned managed identities.
+- `container-registry.bicep`: Azure Container Registry.
+- `key-vault.bicep`: Key Vault and the optional Entra Web client-secret value.
+- `storage.bicep`: Storage account and private product-image container.
+- `image-delivery.bicep`: optional Azure Front Door Premium profile, endpoint, origin, and route.
+- `sql.bicep`: Azure SQL logical server, database, and Entra administrator.
+- `redis.bicep`: Azure Managed Redis, its database, and the Redis connection-string secret stored in the existing Key Vault.
+- `access-control.bicep`: ACR, Blob Storage, and Key Vault role assignments.
+- `private-endpoints.bicep`: private DNS zones, VNet links, private endpoints, and DNS zone groups.
+- `container-apps.bicep`: internal API and public Web Container Apps, configuration, probes, scaling, and outputs.
+
+`infra/modules/environment.bicep` remains the resource-group orchestrator. It calculates shared names and configuration, invokes the capability modules, and returns the exact outputs consumed by `infra/main.bicep` and GitHub Actions. Use module outputs for implicit dependencies and explicit `dependsOn` only when access assignments must exist before application containers start.
+
+Do not expose credentials through ordinary outputs. Keep secret construction inside the module that writes the value to Key Vault and return only the secret URI required by Container Apps.
+
+## Destructive Rebuild Validation
+
+After local static verification and review, enumerate Azure resources and identify only environment resource groups whose names and tags match bootstrap state and the Bicep naming contract. Do not delete the External ID tenant, app registrations, GitHub OIDC deployment identity, bootstrap state, GitHub environments, or unrelated Azure resources.
+
+For every currently deployed Shopping environment:
+
+1. Capture the resource group, deployed Web origin, current image SHA, and bootstrap verification result.
+2. Invoke the supported `infra.yml` destroy operation with the required typed confirmation.
+3. Verify the environment resource group is deleted and account for soft-deleted or purge-protected Key Vault behavior.
+4. Deploy infrastructure using `infra.yml` and the modular Bicep templates.
+5. Deploy application images using `app.yml`, including EF Core migration and runtime SQL grants.
+6. Reconcile a changed Container Apps Web origin through `ExternalId.PublicWebBaseUrls` when necessary.
+7. Run bootstrap verification and validate Web `/healthz`, internal API health through Container Apps state, OpenID Connect challenge routing, database migration, image delivery, managed Redis, and healthy application revisions.
+
+Record command/run URLs, deployment outcomes, durations, and any recovery action in the runbook. The rebuild is successful only when a new operator can follow the documented path without relying on undocumented state.
+
 ## Verification Standard
 
 All commands and file paths must match the repository. Documentation validation includes Markdown/link inspection, bootstrap regression tests, Bicep compilation, .NET build/tests where practical, and confirmation that no secrets or installation-specific credentials were introduced. All Shopping processes must be stopped before handing control back.
