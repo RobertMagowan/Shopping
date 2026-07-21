@@ -119,6 +119,9 @@ var frontDoorImageEndpoint = enableFrontDoorImageDelivery ? 'https://${frontDoor
 var productImagePublicBaseUri = enableFrontDoorImageDelivery ? frontDoorImageEndpoint : '${storageBlobEndpoint}/${productImagesContainerName}'
 var aspNetCoreEnvironment = environmentName == 'prod' ? 'Production' : environmentName == 'dev' ? 'Dev' : 'Test'
 var hasWebClientSecret = !empty(entraExternalIdWebClientSecret)
+var keyVaultPurgeProtectionProperties = environmentName == 'prod' ? {
+  enablePurgeProtection: true
+} : {}
 var blobPrivateDnsZoneName = 'privatelink.blob.${environment().suffixes.storage}'
 var sqlPrivateDnsZoneName = 'privatelink.${environment().suffixes.sqlServerHostname}'
 var privateDnsZoneNames = [
@@ -309,10 +312,9 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: keyVaultName
   location: location
   tags: tags
-  properties: {
+  properties: union({
     tenantId: tenant().tenantId
     enableRbacAuthorization: true
-    enablePurgeProtection: environmentName == 'prod'
     enableSoftDelete: true
     softDeleteRetentionInDays: environmentName == 'prod' ? 90 : 7
     publicNetworkAccess: enablePrivateEndpoints ? 'Disabled' : 'Enabled'
@@ -320,7 +322,7 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
       family: 'A'
       name: 'standard'
     }
-  }
+  }, keyVaultPurgeProtectionProperties)
 }
 
 resource webClientSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (hasWebClientSecret) {
