@@ -19,7 +19,7 @@ The current baseline deploys:
 - Azure SQL server and database.
 - Storage account and `product-images` blob container.
 - Key Vault with RBAC and purge protection.
-- Azure Cache for Redis.
+- Azure Managed Redis using the `Balanced_B0` SKU, with high availability enabled in production.
 - Log Analytics and workspace-based Application Insights.
 - A VNet with a delegated Container Apps infrastructure subnet, reserved ingress/APIM subnets, and a private-endpoint subnet.
 - Optional private endpoints and Private DNS for SQL, Blob Storage, Key Vault, Redis, and Container Registry.
@@ -72,6 +72,8 @@ ASPNETCORE_ENVIRONMENT=Dev
 That prevents Azure-hosted development from loading local-only `appsettings.Development.json` values. Runtime settings for deployed `dev`, `test`, and `prod` come from Container Apps environment variables. Sensitive values, such as the Web client secret and Redis connection string, stay in Key Vault and are exposed through Container Apps Key Vault secret references.
 
 The initial infrastructure deployment creates ACR, user-assigned identities, RBAC, networking, SQL, Redis, Storage, and Key Vault without creating the application containers. The `app` workflow pushes both immutable commit-SHA images, migrates SQL, and then creates or updates the Container Apps.
+
+Azure Managed Redis uses encrypted client traffic on port `10000`. Dev and test permit public network access for the managed Container Apps environment; production disables public access and resolves the cache through `privatelink.redis.azure.net`.
 
 `prod` uses private PaaS endpoints, custom-VNet injection, explicit NAT egress, and a scalable replica range:
 
