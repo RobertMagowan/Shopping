@@ -578,6 +578,10 @@ resource apiContainerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployAp
               value: appInsights.properties.ConnectionString
             }
             {
+              name: 'AZURE_CLIENT_ID'
+              value: apiIdentity.properties.clientId
+            }
+            {
               name: 'EntraExternalId__Instance'
               value: entraExternalIdInstance
             }
