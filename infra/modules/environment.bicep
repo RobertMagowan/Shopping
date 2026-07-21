@@ -96,6 +96,8 @@ var apiContainerAppName = 'ca-${workloadName}-api-${environmentName}-${suffix}'
 var containerAppsEnvironmentName = 'cae-${workloadName}-${environmentName}-${suffix}'
 var webIdentityName = 'id-${workloadName}-web-${environmentName}-${suffix}'
 var apiIdentityName = 'id-${workloadName}-api-${environmentName}-${suffix}'
+var webIdentityResourceId = resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', webIdentityName)
+var apiIdentityResourceId = resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', apiIdentityName)
 var containerRegistryName = take('acr${compactWorkloadName}${environmentName}${suffix}', 50)
 var logAnalyticsName = 'log-${workloadName}-${environmentName}-${suffix}'
 var appInsightsName = 'appi-${workloadName}-${environmentName}-${suffix}'
@@ -119,9 +121,6 @@ var frontDoorImageEndpoint = enableFrontDoorImageDelivery ? 'https://${frontDoor
 var productImagePublicBaseUri = enableFrontDoorImageDelivery ? frontDoorImageEndpoint : '${storageBlobEndpoint}/${productImagesContainerName}'
 var aspNetCoreEnvironment = environmentName == 'prod' ? 'Production' : environmentName == 'dev' ? 'Dev' : 'Test'
 var hasWebClientSecret = !empty(entraExternalIdWebClientSecret)
-var keyVaultPurgeProtectionProperties = environmentName == 'prod' ? {
-  enablePurgeProtection: true
-} : {}
 var blobPrivateDnsZoneName = 'privatelink.blob.${environment().suffixes.storage}'
 var sqlPrivateDnsZoneName = 'privatelink.${environment().suffixes.sqlServerHostname}'
 var privateDnsZoneNames = [
@@ -166,71 +165,58 @@ module containerPlatform 'container-platform.bicep' = {
   }
 }
 
-resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
+module identities 'identities.bicep' = {
+  params: {
+    location: location
+    webIdentityName: webIdentityName
+    apiIdentityName: apiIdentityName
+    tags: tags
+  }
+}
+
+module containerRegistry 'container-registry.bicep' = {
+  params: {
+    environmentName: environmentName
+    location: location
+    enablePrivateEndpoints: enablePrivateEndpoints
+    containerRegistryName: containerRegistryName
+    containerRegistrySkuName: containerRegistrySkuName
+    tags: tags
+  }
+}
+
+module keyVault 'key-vault.bicep' = {
+  params: {
+    environmentName: environmentName
+    location: location
+    enablePrivateEndpoints: enablePrivateEndpoints
+    keyVaultName: keyVaultName
+    entraExternalIdWebClientSecret: entraExternalIdWebClientSecret
+    tags: tags
+  }
+}
+
+module storage 'storage.bicep' = {
+  params: {
+    environmentName: environmentName
+    location: location
+    enablePrivateEndpoints: enablePrivateEndpoints
+    storageAccountName: storageAccountName
+    productImagesContainerName: productImagesContainerName
+    tags: tags
+  }
+}
+
+resource existingContainerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = {
   name: containerRegistryName
-  location: location
-  tags: tags
-  sku: {
-    name: containerRegistrySkuName
-  }
-  properties: union({
-    adminUserEnabled: false
-    anonymousPullEnabled: false
-    dataEndpointEnabled: false
-    networkRuleBypassOptions: 'AzureServices'
-    publicNetworkAccess: enablePrivateEndpoints ? 'Disabled' : 'Enabled'
-  }, environmentName == 'prod' ? {
-    zoneRedundancy: 'Enabled'
-  } : {})
 }
 
-resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
+resource existingKeyVault 'Microsoft.KeyVault/vaults@2023-07-01' existing = {
   name: keyVaultName
-  location: location
-  tags: tags
-  properties: union({
-    tenantId: tenant().tenantId
-    enableRbacAuthorization: true
-    enableSoftDelete: true
-    softDeleteRetentionInDays: environmentName == 'prod' ? 90 : 7
-    publicNetworkAccess: enablePrivateEndpoints ? 'Disabled' : 'Enabled'
-    sku: {
-      family: 'A'
-      name: 'standard'
-    }
-  }, keyVaultPurgeProtectionProperties)
 }
 
-resource webClientSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (hasWebClientSecret) {
-  parent: keyVault
-  name: 'entra-external-id-web-client-secret'
-  properties: {
-    value: entraExternalIdWebClientSecret
-  }
-}
-
-resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
+resource existingStorageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' existing = {
   name: storageAccountName
-  location: location
-  tags: tags
-  kind: 'StorageV2'
-  sku: {
-    name: environmentName == 'prod' ? 'Standard_ZRS' : 'Standard_LRS'
-  }
-  properties: {
-    allowBlobPublicAccess: false
-    allowSharedKeyAccess: false
-    minimumTlsVersion: 'TLS1_2'
-    publicNetworkAccess: enablePrivateEndpoints ? 'Disabled' : 'Enabled'
-    supportsHttpsTrafficOnly: true
-  }
-}
-
-resource productImagesContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
-  name: '${storageAccount.name}/default/${productImagesContainerName}'
-  properties: {
-    publicAccess: 'None'
-  }
 }
 
 resource frontDoorProfile 'Microsoft.Cdn/profiles@2024-05-01' = if (enableFrontDoorImageDelivery) {
@@ -274,15 +260,15 @@ resource frontDoorOrigin 'Microsoft.Cdn/profiles/originGroups/origins@2024-05-01
   parent: frontDoorOriginGroup
   name: frontDoorOriginName
   properties: {
-    hostName: '${storageAccount.name}.blob.${environment().suffixes.storage}'
-    originHostHeader: '${storageAccount.name}.blob.${environment().suffixes.storage}'
+    hostName: '${storage.outputs.storageAccountName}.blob.${environment().suffixes.storage}'
+    originHostHeader: '${storage.outputs.storageAccountName}.blob.${environment().suffixes.storage}'
     httpPort: 80
     httpsPort: 443
     priority: 1
     weight: 1000
     enabledState: 'Enabled'
     enforceCertificateNameCheck: true
-    privateLinkResourceId: storageAccount.id
+    privateLinkResourceId: storage.outputs.storageAccountId
     privateLinkLocation: location
     privateLinkSubResourceType: 'blob'
   }
@@ -382,23 +368,11 @@ resource redisDatabase 'Microsoft.Cache/redisEnterprise/databases@2025-07-01' = 
 }
 
 resource redisConnectionStringSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
-  parent: keyVault
+  parent: existingKeyVault
   name: 'shopping-web-redis-connection-string'
   properties: {
     value: '${redis.properties.hostName}:${redisDatabase.properties.port},password=${redisDatabase.listKeys().primaryKey},ssl=True,abortConnect=False'
   }
-}
-
-resource webIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
-  name: webIdentityName
-  location: location
-  tags: tags
-}
-
-resource apiIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
-  name: apiIdentityName
-  location: location
-  tags: tags
 }
 
 var deployApplicationContainers = containerImageTag != 'bootstrap'
@@ -406,8 +380,8 @@ var containerResources = {
   cpu: json(containerAppCpu)
   memory: containerAppMemory
 }
-var apiContainerImage = '${containerRegistry.properties.loginServer}/shopping-api:${containerImageTag}'
-var webContainerImage = '${containerRegistry.properties.loginServer}/shopping-web:${containerImageTag}'
+var apiContainerImage = '${containerRegistry.outputs.containerRegistryLoginServer}/shopping-api:${containerImageTag}'
+var webContainerImage = '${containerRegistry.outputs.containerRegistryLoginServer}/shopping-web:${containerImageTag}'
 
 resource apiContainerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployApplicationContainers) {
   name: apiContainerAppName
@@ -416,7 +390,7 @@ resource apiContainerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployAp
   identity: {
     type: 'UserAssigned'
     userAssignedIdentities: {
-      '${apiIdentity.id}': {}
+      '${apiIdentityResourceId}': {}
     }
   }
   properties: {
@@ -426,8 +400,8 @@ resource apiContainerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployAp
       activeRevisionsMode: 'Single'
       registries: [
         {
-          server: containerRegistry.properties.loginServer
-          identity: apiIdentity.id
+          server: containerRegistry.outputs.containerRegistryLoginServer
+          identity: apiIdentityResourceId
         }
       ]
       ingress: {
@@ -458,7 +432,7 @@ resource apiContainerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployAp
             }
             {
               name: 'AZURE_CLIENT_ID'
-              value: apiIdentity.properties.clientId
+              value: identities.outputs.apiIdentityClientId
             }
             {
               name: 'EntraExternalId__Instance'
@@ -478,7 +452,7 @@ resource apiContainerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployAp
             }
             {
               name: 'ConnectionStrings__ShoppingDatabase'
-              value: 'Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Database=${sqlDatabase.name};Authentication=Active Directory Managed Identity;User Id=${apiIdentity.properties.clientId};Encrypt=True;TrustServerCertificate=False;'
+              value: 'Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Database=${sqlDatabase.name};Authentication=Active Directory Managed Identity;User Id=${identities.outputs.apiIdentityClientId};Encrypt=True;TrustServerCertificate=False;'
             }
             {
               name: 'ProductImageStorage__ServiceUri'
@@ -555,7 +529,7 @@ resource webContainerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployAp
   identity: {
     type: 'UserAssigned'
     userAssignedIdentities: {
-      '${webIdentity.id}': {}
+      '${webIdentityResourceId}': {}
     }
   }
   properties: {
@@ -565,21 +539,21 @@ resource webContainerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployAp
       activeRevisionsMode: 'Single'
       registries: [
         {
-          server: containerRegistry.properties.loginServer
-          identity: webIdentity.id
+          server: containerRegistry.outputs.containerRegistryLoginServer
+          identity: webIdentityResourceId
         }
       ]
       secrets: concat([
         {
           name: 'redis-connection-string'
           keyVaultUrl: redisConnectionStringSecret.properties.secretUri
-          identity: webIdentity.id
+          identity: webIdentityResourceId
         }
       ], hasWebClientSecret ? [
         {
           name: 'entra-client-secret'
-          keyVaultUrl: webClientSecret!.properties.secretUri
-          identity: webIdentity.id
+          keyVaultUrl: keyVault.outputs.webClientSecretUri
+          identity: webIdentityResourceId
         }
       ] : [])
       ingress: {
@@ -711,8 +685,8 @@ resource acrPushRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' existi
 }
 
 resource deploymentAcrPushAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(containerRegistry.id, deploymentPrincipalObjectId, acrPushRole.id)
-  scope: containerRegistry
+  name: guid(existingContainerRegistry.id, deploymentPrincipalObjectId, acrPushRole.id)
+  scope: existingContainerRegistry
   properties: {
     principalId: deploymentPrincipalObjectId
     principalType: 'ServicePrincipal'
@@ -721,20 +695,20 @@ resource deploymentAcrPushAssignment 'Microsoft.Authorization/roleAssignments@20
 }
 
 resource webAcrPullAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(containerRegistry.id, webIdentity.id, acrPullRole.id)
-  scope: containerRegistry
+  name: guid(existingContainerRegistry.id, webIdentityResourceId, acrPullRole.id)
+  scope: existingContainerRegistry
   properties: {
-    principalId: webIdentity.properties.principalId
+    principalId: identities.outputs.webIdentityPrincipalId
     principalType: 'ServicePrincipal'
     roleDefinitionId: acrPullRole.id
   }
 }
 
 resource apiAcrPullAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(containerRegistry.id, apiIdentity.id, acrPullRole.id)
-  scope: containerRegistry
+  name: guid(existingContainerRegistry.id, apiIdentityResourceId, acrPullRole.id)
+  scope: existingContainerRegistry
   properties: {
-    principalId: apiIdentity.properties.principalId
+    principalId: identities.outputs.apiIdentityPrincipalId
     principalType: 'ServicePrincipal'
     roleDefinitionId: acrPullRole.id
   }
@@ -746,20 +720,20 @@ resource blobDelegatorRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' 
 }
 
 resource apiBlobContributorAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storageAccount.id, apiIdentity.id, blobDataContributorRole.id)
-  scope: storageAccount
+  name: guid(existingStorageAccount.id, apiIdentityResourceId, blobDataContributorRole.id)
+  scope: existingStorageAccount
   properties: {
-    principalId: apiIdentity.properties.principalId
+    principalId: identities.outputs.apiIdentityPrincipalId
     principalType: 'ServicePrincipal'
     roleDefinitionId: blobDataContributorRole.id
   }
 }
 
 resource apiBlobDelegatorAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storageAccount.id, apiIdentity.id, blobDelegatorRole.id)
-  scope: storageAccount
+  name: guid(existingStorageAccount.id, apiIdentityResourceId, blobDelegatorRole.id)
+  scope: existingStorageAccount
   properties: {
-    principalId: apiIdentity.properties.principalId
+    principalId: identities.outputs.apiIdentityPrincipalId
     principalType: 'ServicePrincipal'
     roleDefinitionId: blobDelegatorRole.id
   }
@@ -771,10 +745,10 @@ resource keyVaultSecretsUserRole 'Microsoft.Authorization/roleDefinitions@2022-0
 }
 
 resource webKeyVaultSecretsUserAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(keyVault.id, webIdentity.id, keyVaultSecretsUserRole.id)
-  scope: keyVault
+  name: guid(existingKeyVault.id, webIdentityResourceId, keyVaultSecretsUserRole.id)
+  scope: existingKeyVault
   properties: {
-    principalId: webIdentity.properties.principalId
+    principalId: identities.outputs.webIdentityPrincipalId
     principalType: 'ServicePrincipal'
     roleDefinitionId: keyVaultSecretsUserRole.id
   }
@@ -799,7 +773,7 @@ resource privateDnsZoneLinks 'Microsoft.Network/privateDnsZones/virtualNetworkLi
 }]
 
 resource storagePrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = if (enablePrivateEndpoints) {
-  name: 'pe-${storageAccount.name}-blob'
+  name: 'pe-${storageAccountName}-blob'
   location: location
   tags: tags
   properties: {
@@ -810,7 +784,7 @@ resource storagePrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' 
       {
         name: 'blob'
         properties: {
-          privateLinkServiceId: storageAccount.id
+          privateLinkServiceId: storage.outputs.storageAccountId
           groupIds: [
             'blob'
           ]
@@ -843,7 +817,7 @@ resource sqlPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = if
 }
 
 resource keyVaultPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = if (enablePrivateEndpoints) {
-  name: 'pe-${keyVault.name}'
+  name: 'pe-${keyVaultName}'
   location: location
   tags: tags
   properties: {
@@ -854,7 +828,7 @@ resource keyVaultPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01'
       {
         name: 'vault'
         properties: {
-          privateLinkServiceId: keyVault.id
+          privateLinkServiceId: keyVault.outputs.keyVaultId
           groupIds: [
             'vault'
           ]
@@ -887,7 +861,7 @@ resource redisPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = 
 }
 
 resource containerRegistryPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = if (enablePrivateEndpoints) {
-  name: 'pe-${containerRegistry.name}'
+  name: 'pe-${containerRegistryName}'
   location: location
   tags: tags
   properties: {
@@ -898,7 +872,7 @@ resource containerRegistryPrivateEndpoint 'Microsoft.Network/privateEndpoints@20
       {
         name: 'registry'
         properties: {
-          privateLinkServiceId: containerRegistry.id
+          privateLinkServiceId: containerRegistry.outputs.containerRegistryId
           groupIds: [
             'registry'
           ]
@@ -987,12 +961,12 @@ output webContainerAppName string = webContainerAppName
 output webContainerAppFqdn string = deployApplicationContainers ? webContainerApp!.properties.configuration.ingress.fqdn : ''
 output webRedirectUri string = deployApplicationContainers ? 'https://${webContainerApp!.properties.configuration.ingress.fqdn}/signin-oidc' : ''
 output apiContainerAppName string = apiContainerAppName
-output apiIdentityName string = apiIdentity.name
-output apiIdentityPrincipalId string = apiIdentity.properties.principalId
-output containerRegistryName string = containerRegistry.name
-output containerRegistryLoginServer string = containerRegistry.properties.loginServer
-output keyVaultName string = keyVault.name
-output storageAccountName string = storageAccount.name
+output apiIdentityName string = identities.outputs.apiIdentityName
+output apiIdentityPrincipalId string = identities.outputs.apiIdentityPrincipalId
+output containerRegistryName string = containerRegistry.outputs.containerRegistryName
+output containerRegistryLoginServer string = containerRegistry.outputs.containerRegistryLoginServer
+output keyVaultName string = keyVault.outputs.keyVaultName
+output storageAccountName string = storage.outputs.storageAccountName
 output sqlServerName string = sqlServer.name
 output sqlDatabaseName string = sqlDatabase.name
 output sqlServerFullyQualifiedDomainName string = sqlServer.properties.fullyQualifiedDomainName

@@ -7,6 +7,10 @@ $orchestrator = Get-Content -LiteralPath $orchestratorPath -Raw
 $requiredModules = @(
     'network'
     'container-platform'
+    'identities'
+    'container-registry'
+    'key-vault'
+    'storage'
 )
 
 foreach ($moduleName in $requiredModules) {
