@@ -37,11 +37,11 @@ jobs:
         run: dotnet build Shopping.slnx --configuration "$CONFIGURATION" --no-restore
 
       - name: Install EF Core tools
-        run: dotnet tool install --global dotnet-ef --version 10.0.9
+        run: dotnet tool install --tool-path ./.tools dotnet-ef --version 10.0.9
 
       - name: Verify EF Core migrations match the model
         run: >-
-          dotnet ef migrations has-pending-model-changes
+          ./.tools/dotnet-ef migrations has-pending-model-changes
           --project src/Shopping.Infrastructure/Shopping.Infrastructure.csproj
           --startup-project src/Shopping.Api/Shopping.Api.csproj
           --configuration "$CONFIGURATION"
