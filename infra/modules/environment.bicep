@@ -137,157 +137,33 @@ var privateEndpointSubnetName = 'snet-private-endpoints'
 var appGatewaySubnetName = 'snet-appgateway'
 var apimSubnetName = 'snet-apim'
 
-resource containerAppsNetworkSecurityGroup 'Microsoft.Network/networkSecurityGroups@2024-05-01' = {
-  name: containerAppsNsgName
-  location: location
-  tags: tags
-  properties: {
-    securityRules: []
+module network 'network.bicep' = {
+  params: {
+    location: location
+    enablePrivateEndpoints: enablePrivateEndpoints
+    virtualNetworkName: vnetName
+    containerAppsNetworkSecurityGroupName: containerAppsNsgName
+    natGatewayName: natGatewayName
+    natPublicIpName: natPublicIpName
+    containerAppsInfrastructureSubnetName: containerAppsInfrastructureSubnetName
+    privateEndpointSubnetName: privateEndpointSubnetName
+    appGatewaySubnetName: appGatewaySubnetName
+    apimSubnetName: apimSubnetName
+    tags: tags
   }
 }
 
-resource natPublicIp 'Microsoft.Network/publicIPAddresses@2024-05-01' = if (enablePrivateEndpoints) {
-  name: natPublicIpName
-  location: location
-  tags: tags
-  sku: {
-    name: 'Standard'
+module containerPlatform 'container-platform.bicep' = {
+  params: {
+    environmentName: environmentName
+    location: location
+    enablePrivateEndpoints: enablePrivateEndpoints
+    logAnalyticsName: logAnalyticsName
+    applicationInsightsName: appInsightsName
+    containerAppsEnvironmentName: containerAppsEnvironmentName
+    containerAppsInfrastructureSubnetId: network.outputs.containerAppsInfrastructureSubnetId
+    tags: tags
   }
-  properties: {
-    publicIPAllocationMethod: 'Static'
-  }
-}
-
-resource outboundNatGateway 'Microsoft.Network/natGateways@2024-05-01' = if (enablePrivateEndpoints) {
-  name: natGatewayName
-  location: location
-  tags: tags
-  sku: {
-    name: 'Standard'
-  }
-  properties: {
-    idleTimeoutInMinutes: 10
-    publicIpAddresses: [
-      {
-        id: natPublicIp.id
-      }
-    ]
-  }
-}
-
-resource virtualNetwork 'Microsoft.Network/virtualNetworks@2024-05-01' = {
-  name: vnetName
-  location: location
-  tags: tags
-  properties: {
-    addressSpace: {
-      addressPrefixes: [
-        '10.40.0.0/16'
-      ]
-    }
-    subnets: [
-      {
-        name: appGatewaySubnetName
-        properties: {
-          addressPrefix: '10.40.0.0/24'
-        }
-      }
-      {
-        name: apimSubnetName
-        properties: {
-          addressPrefix: '10.40.1.0/24'
-        }
-      }
-      {
-        name: containerAppsInfrastructureSubnetName
-        properties: union({
-          addressPrefix: '10.40.2.0/24'
-          networkSecurityGroup: {
-            id: containerAppsNetworkSecurityGroup.id
-          }
-          delegations: [
-            {
-              name: 'container-apps-delegation'
-              properties: {
-                serviceName: 'Microsoft.App/environments'
-              }
-            }
-          ]
-        }, enablePrivateEndpoints ? {
-          natGateway: {
-            id: outboundNatGateway.id
-          }
-        } : {})
-      }
-      {
-        name: privateEndpointSubnetName
-        properties: {
-          addressPrefix: '10.40.3.0/24'
-          privateEndpointNetworkPolicies: 'Disabled'
-        }
-      }
-    ]
-  }
-}
-
-resource containerAppsInfrastructureSubnet 'Microsoft.Network/virtualNetworks/subnets@2024-05-01' existing = {
-  parent: virtualNetwork
-  name: containerAppsInfrastructureSubnetName
-}
-
-resource privateEndpointSubnet 'Microsoft.Network/virtualNetworks/subnets@2024-05-01' existing = {
-  parent: virtualNetwork
-  name: privateEndpointSubnetName
-}
-
-resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
-  name: logAnalyticsName
-  location: location
-  tags: tags
-  properties: {
-    sku: {
-      name: 'PerGB2018'
-    }
-    retentionInDays: environmentName == 'prod' ? 90 : 30
-  }
-}
-
-resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
-  name: appInsightsName
-  location: location
-  kind: 'web'
-  tags: tags
-  properties: {
-    Application_Type: 'web'
-    WorkspaceResourceId: logAnalytics.id
-  }
-}
-
-resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2025-01-01' = {
-  name: containerAppsEnvironmentName
-  location: location
-  tags: tags
-  properties: union({
-    appLogsConfiguration: {
-      destination: 'log-analytics'
-      logAnalyticsConfiguration: {
-        customerId: logAnalytics.properties.customerId
-        sharedKey: logAnalytics.listKeys().primarySharedKey
-      }
-    }
-    zoneRedundant: environmentName == 'prod'
-    workloadProfiles: [
-      {
-        name: 'Consumption'
-        workloadProfileType: 'Consumption'
-      }
-    ]
-  }, enablePrivateEndpoints ? {
-    vnetConfiguration: {
-      infrastructureSubnetId: containerAppsInfrastructureSubnet.id
-      internal: false
-    }
-  } : {})
 }
 
 resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
@@ -544,7 +420,7 @@ resource apiContainerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployAp
     }
   }
   properties: {
-    managedEnvironmentId: containerAppsEnvironment.id
+    managedEnvironmentId: containerPlatform.outputs.containerAppsEnvironmentId
     workloadProfileName: 'Consumption'
     configuration: {
       activeRevisionsMode: 'Single'
@@ -578,7 +454,7 @@ resource apiContainerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployAp
             }
             {
               name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
-              value: appInsights.properties.ConnectionString
+              value: containerPlatform.outputs.applicationInsightsConnectionString
             }
             {
               name: 'AZURE_CLIENT_ID'
@@ -683,7 +559,7 @@ resource webContainerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployAp
     }
   }
   properties: {
-    managedEnvironmentId: containerAppsEnvironment.id
+    managedEnvironmentId: containerPlatform.outputs.containerAppsEnvironmentId
     workloadProfileName: 'Consumption'
     configuration: {
       activeRevisionsMode: 'Single'
@@ -733,7 +609,7 @@ resource webContainerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployAp
             }
             {
               name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
-              value: appInsights.properties.ConnectionString
+              value: containerPlatform.outputs.applicationInsightsConnectionString
             }
             {
               name: 'EntraExternalId__Instance'
@@ -917,7 +793,7 @@ resource privateDnsZoneLinks 'Microsoft.Network/privateDnsZones/virtualNetworkLi
   properties: {
     registrationEnabled: false
     virtualNetwork: {
-      id: virtualNetwork.id
+      id: network.outputs.virtualNetworkId
     }
   }
 }]
@@ -928,7 +804,7 @@ resource storagePrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' 
   tags: tags
   properties: {
     subnet: {
-      id: privateEndpointSubnet.id
+      id: network.outputs.privateEndpointSubnetId
     }
     privateLinkServiceConnections: [
       {
@@ -950,7 +826,7 @@ resource sqlPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = if
   tags: tags
   properties: {
     subnet: {
-      id: privateEndpointSubnet.id
+      id: network.outputs.privateEndpointSubnetId
     }
     privateLinkServiceConnections: [
       {
@@ -972,7 +848,7 @@ resource keyVaultPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01'
   tags: tags
   properties: {
     subnet: {
-      id: privateEndpointSubnet.id
+      id: network.outputs.privateEndpointSubnetId
     }
     privateLinkServiceConnections: [
       {
@@ -994,7 +870,7 @@ resource redisPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = 
   tags: tags
   properties: {
     subnet: {
-      id: privateEndpointSubnet.id
+      id: network.outputs.privateEndpointSubnetId
     }
     privateLinkServiceConnections: [
       {
@@ -1016,7 +892,7 @@ resource containerRegistryPrivateEndpoint 'Microsoft.Network/privateEndpoints@20
   tags: tags
   properties: {
     subnet: {
-      id: privateEndpointSubnet.id
+      id: network.outputs.privateEndpointSubnetId
     }
     privateLinkServiceConnections: [
       {
