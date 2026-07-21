@@ -94,7 +94,7 @@ Production image delivery uses Azure Front Door Premium:
 Browser -> Front Door Premium -> Private Link -> Blob Storage product-images container
 ```
 
-The API is configured to return image URLs using the Front Door endpoint and shared short-lived SAS query strings. The default SAS lifetime is 10 minutes. Front Door caches by full query string so all app users share cache entries during the same SAS window.
+All Azure-hosted environments keep the image container private and return shared short-lived SAS query strings. Dev and test return direct Blob Storage URLs; production returns Front Door URLs. The default SAS lifetime is 10 minutes. Front Door caches by full query string so all app users share cache entries during the same SAS window.
 
 The Front Door private endpoint connection to the Storage account may require approval in the target subscription after the first deployment.
 
