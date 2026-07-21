@@ -6,19 +6,32 @@ internal static class ProductImageBlobSeedData
 {
     public static readonly ProductImageBlobSeed[] Items =
     [
-        new("products/starter-coffee.svg", "Starter Coffee", "#f4efe6", "#7c4a2d"),
-        new("products/ceramic-mug.svg", "Ceramic Mug", "#e9f2f7", "#25637a"),
-        new("products/travel-tumbler.svg", "Travel Tumbler", "#eef0f3", "#59606a"),
-        new("products/espresso-beans.svg", "Espresso Beans", "#f0e7dc", "#4b2f22"),
-        new("products/breakfast-tea.svg", "Breakfast Tea", "#f6eee1", "#8a4f19"),
-        new("products/glass-teapot.svg", "Glass Teapot", "#eaf6f3", "#247c6d"),
-        new("products/pour-over-kit.svg", "Pour Over Kit", "#f1efe9", "#5d5a45"),
-        new("products/milk-frother.svg", "Milk Frother", "#eef3f8", "#3f6f9f"),
-        new("products/coffee-filters.svg", "Coffee Filters", "#f7f4ec", "#8a7a58"),
-        new("products/cold-brew-bottle.svg", "Cold Brew Bottle", "#e8f0f6", "#2d5974"),
-        new("products/digital-scale.svg", "Digital Scale", "#f0f2f4", "#3d4852"),
-        new("products/gift-card.svg", "Gift Card", "#f6edf2", "#9b3567")
+        .. CreateSeeds("starter-coffee", "Starter Coffee", "#f4efe6", "#7c4a2d"),
+        .. CreateSeeds("ceramic-mug", "Ceramic Mug", "#e9f2f7", "#25637a"),
+        .. CreateSeeds("travel-tumbler", "Travel Tumbler", "#eef0f3", "#59606a"),
+        .. CreateSeeds("espresso-beans", "Espresso Beans", "#f0e7dc", "#4b2f22"),
+        .. CreateSeeds("breakfast-tea", "Breakfast Tea", "#f6eee1", "#8a4f19"),
+        .. CreateSeeds("glass-teapot", "Glass Teapot", "#eaf6f3", "#247c6d"),
+        .. CreateSeeds("pour-over-kit", "Pour Over Kit", "#f1efe9", "#5d5a45"),
+        .. CreateSeeds("milk-frother", "Milk Frother", "#eef3f8", "#3f6f9f"),
+        .. CreateSeeds("coffee-filters", "Coffee Filters", "#f7f4ec", "#8a7a58"),
+        .. CreateSeeds("cold-brew-bottle", "Cold Brew Bottle", "#e8f0f6", "#2d5974"),
+        .. CreateSeeds("digital-scale", "Digital Scale", "#f0f2f4", "#3d4852"),
+        .. CreateSeeds("gift-card", "Gift Card", "#f6edf2", "#9b3567")
     ];
+
+    private static ProductImageBlobSeed[] CreateSeeds(string productId,
+                                                       string productName,
+                                                       string background,
+                                                       string accent)
+    {
+        return
+        [
+            new($"products/{productId}.svg", productName, background, accent),
+            new($"products/{productId}-detail.svg", $"{productName} Detail", accent, background),
+            new($"products/{productId}-lifestyle.svg", $"{productName} Lifestyle", "#ffffff", accent)
+        ];
+    }
 
     public static string CreateSvg(ProductImageBlobSeed seed)
     {
