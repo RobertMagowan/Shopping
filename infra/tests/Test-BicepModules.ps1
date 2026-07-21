@@ -14,6 +14,9 @@ $requiredModules = @(
     'sql'
     'redis'
     'image-delivery'
+    'access-control'
+    'private-endpoints'
+    'container-apps'
 )
 
 foreach ($moduleName in $requiredModules) {
@@ -25,6 +28,11 @@ foreach ($moduleName in $requiredModules) {
     if ($orchestrator -notmatch "module\s+\w+\s+'$([regex]::Escape($moduleName)).bicep'") {
         throw "environment.bicep does not invoke $moduleName.bicep"
     }
+}
+
+$resourceDeclarations = [regex]::Matches($orchestrator, '(?m)^resource\s+').Count
+if ($resourceDeclarations -gt 0) {
+    throw "environment.bicep must orchestrate modules only; found $resourceDeclarations resource declarations."
 }
 
 Write-Host 'Bicep module structure is valid.'

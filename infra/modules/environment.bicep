@@ -116,23 +116,19 @@ var natGatewayName = 'nat-${workloadName}-${environmentName}-${suffix}'
 var natPublicIpName = 'pip-nat-${workloadName}-${environmentName}-${suffix}'
 var containerAppsNsgName = 'nsg-container-apps-${environmentName}-${suffix}'
 var productImagesContainerName = 'product-images'
-var storageBlobEndpoint = 'https://${storageAccountName}.blob.${environment().suffixes.storage}'
 var aspNetCoreEnvironment = environmentName == 'prod' ? 'Production' : environmentName == 'dev' ? 'Dev' : 'Test'
 var hasWebClientSecret = !empty(entraExternalIdWebClientSecret)
 var blobPrivateDnsZoneName = 'privatelink.blob.${environment().suffixes.storage}'
 var sqlPrivateDnsZoneName = 'privatelink.${environment().suffixes.sqlServerHostname}'
-var privateDnsZoneNames = [
-  blobPrivateDnsZoneName
-  sqlPrivateDnsZoneName
-  'privatelink.vaultcore.azure.net'
-  'privatelink.redis.azure.net'
-  'privatelink.azurecr.io'
-]
-
 var containerAppsInfrastructureSubnetName = 'snet-container-apps-infrastructure'
 var privateEndpointSubnetName = 'snet-private-endpoints'
 var appGatewaySubnetName = 'snet-appgateway'
 var apimSubnetName = 'snet-apim'
+var deployApplicationContainers = containerImageTag != 'bootstrap'
+var containerResources = {
+  cpu: json(containerAppCpu)
+  memory: containerAppMemory
+}
 
 module network 'network.bicep' = {
   params: {
@@ -205,18 +201,6 @@ module storage 'storage.bicep' = {
   }
 }
 
-resource existingContainerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = {
-  name: containerRegistryName
-}
-
-resource existingKeyVault 'Microsoft.KeyVault/vaults@2023-07-01' existing = {
-  name: keyVaultName
-}
-
-resource existingStorageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' existing = {
-  name: storageAccountName
-}
-
 module sql 'sql.bicep' = {
   params: {
     environmentName: environmentName
@@ -243,6 +227,9 @@ module redis 'redis.bicep' = {
     keyVaultName: keyVaultName
     tags: tags
   }
+  dependsOn: [
+    keyVault
+  ]
 }
 
 module imageDelivery 'image-delivery.bicep' = {
@@ -256,597 +243,95 @@ module imageDelivery 'image-delivery.bicep' = {
     frontDoorRouteName: frontDoorRouteName
     storageAccountName: storageAccountName
     storageAccountId: storage.outputs.storageAccountId
-    storageBlobEndpoint: storageBlobEndpoint
+    storageBlobEndpoint: storage.outputs.storageBlobEndpoint
     productImagesContainerName: productImagesContainerName
     tags: tags
   }
 }
 
-var deployApplicationContainers = containerImageTag != 'bootstrap'
-var containerResources = {
-  cpu: json(containerAppCpu)
-  memory: containerAppMemory
-}
-var apiContainerImage = '${containerRegistry.outputs.containerRegistryLoginServer}/shopping-api:${containerImageTag}'
-var webContainerImage = '${containerRegistry.outputs.containerRegistryLoginServer}/shopping-web:${containerImageTag}'
-
-resource apiContainerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployApplicationContainers) {
-  name: apiContainerAppName
-  location: location
-  tags: tags
-  identity: {
-    type: 'UserAssigned'
-    userAssignedIdentities: {
-      '${apiIdentityResourceId}': {}
-    }
-  }
-  properties: {
-    managedEnvironmentId: containerPlatform.outputs.containerAppsEnvironmentId
-    workloadProfileName: 'Consumption'
-    configuration: {
-      activeRevisionsMode: 'Single'
-      registries: [
-        {
-          server: containerRegistry.outputs.containerRegistryLoginServer
-          identity: apiIdentityResourceId
-        }
-      ]
-      ingress: {
-        external: false
-        allowInsecure: false
-        targetPort: 8080
-        transport: 'auto'
-      }
-    }
-    template: {
-      containers: [
-        {
-          name: 'shopping-api'
-          image: apiContainerImage
-          resources: containerResources
-          env: [
-            {
-              name: 'ASPNETCORE_HTTP_PORTS'
-              value: '8080'
-            }
-            {
-              name: 'ASPNETCORE_ENVIRONMENT'
-              value: aspNetCoreEnvironment
-            }
-            {
-              name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
-              value: containerPlatform.outputs.applicationInsightsConnectionString
-            }
-            {
-              name: 'AZURE_CLIENT_ID'
-              value: identities.outputs.apiIdentityClientId
-            }
-            {
-              name: 'EntraExternalId__Instance'
-              value: entraExternalIdInstance
-            }
-            {
-              name: 'EntraExternalId__TenantId'
-              value: entraExternalIdTenantId
-            }
-            {
-              name: 'EntraExternalId__ClientId'
-              value: entraExternalIdApiClientId
-            }
-            {
-              name: 'EntraExternalId__Audience'
-              value: entraExternalIdApiAudience
-            }
-            {
-              name: 'ConnectionStrings__ShoppingDatabase'
-              value: 'Server=tcp:${sql.outputs.sqlServerFullyQualifiedDomainName},1433;Database=${sql.outputs.sqlDatabaseName};Authentication=Active Directory Managed Identity;User Id=${identities.outputs.apiIdentityClientId};Encrypt=True;TrustServerCertificate=False;'
-            }
-            {
-              name: 'ProductImageStorage__ServiceUri'
-              value: storageBlobEndpoint
-            }
-            {
-              name: 'ProductImageStorage__ContainerName'
-              value: productImagesContainerName
-            }
-            {
-              name: 'ProductImageStorage__PublicBaseUri'
-              value: imageDelivery.outputs.productImagePublicBaseUri
-            }
-            {
-              name: 'ProductImageStorage__UseSharedAccessSignatures'
-              value: 'true'
-            }
-            {
-              name: 'ProductImageStorage__SharedAccessSignatureLifetimeMinutes'
-              value: string(productImageSasLifetimeMinutes)
-            }
-          ]
-          probes: [
-            {
-              type: 'Liveness'
-              httpGet: {
-                path: '/healthz'
-                port: 8080
-                scheme: 'HTTP'
-              }
-              initialDelaySeconds: 10
-              periodSeconds: 30
-            }
-            {
-              type: 'Readiness'
-              httpGet: {
-                path: '/healthz'
-                port: 8080
-                scheme: 'HTTP'
-              }
-              initialDelaySeconds: 5
-              periodSeconds: 10
-            }
-          ]
-        }
-      ]
-      scale: {
-        minReplicas: containerAppMinReplicas
-        maxReplicas: containerAppMaxReplicas
-        rules: [
-          {
-            name: 'http-requests'
-            http: {
-              metadata: {
-                concurrentRequests: '100'
-              }
-            }
-          }
-        ]
-      }
-    }
+module accessControl 'access-control.bicep' = {
+  params: {
+    containerRegistryName: containerRegistryName
+    storageAccountName: storageAccountName
+    keyVaultName: keyVaultName
+    deploymentPrincipalObjectId: deploymentPrincipalObjectId
+    webIdentityResourceId: webIdentityResourceId
+    webIdentityPrincipalId: identities.outputs.webIdentityPrincipalId
+    apiIdentityResourceId: apiIdentityResourceId
+    apiIdentityPrincipalId: identities.outputs.apiIdentityPrincipalId
   }
   dependsOn: [
-    apiAcrPullAssignment
-    apiBlobContributorAssignment
-    apiBlobDelegatorAssignment
+    containerRegistry
+    keyVault
+    storage
   ]
 }
 
-resource webContainerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployApplicationContainers) {
-  name: webContainerAppName
-  location: location
-  tags: tags
-  identity: {
-    type: 'UserAssigned'
-    userAssignedIdentities: {
-      '${webIdentityResourceId}': {}
-    }
+module privateEndpoints 'private-endpoints.bicep' = if (enablePrivateEndpoints) {
+  params: {
+    location: location
+    virtualNetworkName: vnetName
+    virtualNetworkId: network.outputs.virtualNetworkId
+    privateEndpointSubnetId: network.outputs.privateEndpointSubnetId
+    storageAccountName: storageAccountName
+    storageAccountId: storage.outputs.storageAccountId
+    sqlServerName: sqlServerName
+    sqlServerId: sql.outputs.sqlServerId
+    keyVaultName: keyVaultName
+    keyVaultId: keyVault.outputs.keyVaultId
+    redisName: redisName
+    redisId: redis.outputs.redisId
+    containerRegistryName: containerRegistryName
+    containerRegistryId: containerRegistry.outputs.containerRegistryId
+    blobPrivateDnsZoneName: blobPrivateDnsZoneName
+    sqlPrivateDnsZoneName: sqlPrivateDnsZoneName
+    tags: tags
   }
-  properties: {
-    managedEnvironmentId: containerPlatform.outputs.containerAppsEnvironmentId
-    workloadProfileName: 'Consumption'
-    configuration: {
-      activeRevisionsMode: 'Single'
-      registries: [
-        {
-          server: containerRegistry.outputs.containerRegistryLoginServer
-          identity: webIdentityResourceId
-        }
-      ]
-      secrets: concat([
-        {
-          name: 'redis-connection-string'
-          keyVaultUrl: redis.outputs.redisConnectionStringSecretUri
-          identity: webIdentityResourceId
-        }
-      ], hasWebClientSecret ? [
-        {
-          name: 'entra-client-secret'
-          keyVaultUrl: keyVault.outputs.webClientSecretUri
-          identity: webIdentityResourceId
-        }
-      ] : [])
-      ingress: {
-        external: true
-        allowInsecure: false
-        targetPort: 8080
-        transport: 'auto'
-        stickySessions: {
-          affinity: 'sticky'
-        }
-      }
-    }
-    template: {
-      containers: [
-        {
-          name: 'shopping-web'
-          image: webContainerImage
-          resources: containerResources
-          env: concat([
-            {
-              name: 'ASPNETCORE_HTTP_PORTS'
-              value: '8080'
-            }
-            {
-              name: 'ASPNETCORE_ENVIRONMENT'
-              value: aspNetCoreEnvironment
-            }
-            {
-              name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
-              value: containerPlatform.outputs.applicationInsightsConnectionString
-            }
-            {
-              name: 'EntraExternalId__Instance'
-              value: entraExternalIdInstance
-            }
-            {
-              name: 'EntraExternalId__Domain'
-              value: entraExternalIdDomain
-            }
-            {
-              name: 'EntraExternalId__TenantId'
-              value: entraExternalIdTenantId
-            }
-            {
-              name: 'EntraExternalId__ClientId'
-              value: entraExternalIdWebClientId
-            }
-            {
-              name: 'ShoppingApi__BaseUrl'
-              value: 'https://${apiContainerApp!.properties.configuration.ingress.fqdn}/'
-            }
-            {
-              name: 'ShoppingApi__Scopes__0'
-              value: shoppingApiScope
-            }
-            {
-              name: 'ProductImageStorage__PublicBaseUri'
-              value: imageDelivery.outputs.productImagePublicBaseUri
-            }
-            {
-              name: 'ShoppingAzure__Redis__ConnectionString'
-              secretRef: 'redis-connection-string'
-            }
-          ], hasWebClientSecret ? [
-            {
-              name: 'EntraExternalId__ClientSecret'
-              secretRef: 'entra-client-secret'
-            }
-          ] : [])
-          probes: [
-            {
-              type: 'Liveness'
-              httpGet: {
-                path: '/healthz'
-                port: 8080
-                scheme: 'HTTP'
-              }
-              initialDelaySeconds: 10
-              periodSeconds: 30
-            }
-            {
-              type: 'Readiness'
-              httpGet: {
-                path: '/healthz'
-                port: 8080
-                scheme: 'HTTP'
-              }
-              initialDelaySeconds: 5
-              periodSeconds: 10
-            }
-          ]
-        }
-      ]
-      scale: {
-        minReplicas: containerAppMinReplicas
-        maxReplicas: containerAppMaxReplicas
-        rules: [
-          {
-            name: 'http-requests'
-            http: {
-              metadata: {
-                concurrentRequests: '100'
-              }
-            }
-          }
-        ]
-      }
-    }
+}
+
+module containerApps 'container-apps.bicep' = if (deployApplicationContainers) {
+  params: {
+    location: location
+    webContainerAppName: webContainerAppName
+    apiContainerAppName: apiContainerAppName
+    containerAppsEnvironmentId: containerPlatform.outputs.containerAppsEnvironmentId
+    containerRegistryLoginServer: containerRegistry.outputs.containerRegistryLoginServer
+    webIdentityResourceId: webIdentityResourceId
+    apiIdentityResourceId: apiIdentityResourceId
+    apiIdentityClientId: identities.outputs.apiIdentityClientId
+    webContainerImage: '${containerRegistry.outputs.containerRegistryLoginServer}/shopping-web:${containerImageTag}'
+    apiContainerImage: '${containerRegistry.outputs.containerRegistryLoginServer}/shopping-api:${containerImageTag}'
+    containerResources: containerResources
+    containerAppMinReplicas: containerAppMinReplicas
+    containerAppMaxReplicas: containerAppMaxReplicas
+    aspNetCoreEnvironment: aspNetCoreEnvironment
+    applicationInsightsConnectionString: containerPlatform.outputs.applicationInsightsConnectionString
+    entraExternalIdInstance: entraExternalIdInstance
+    entraExternalIdDomain: entraExternalIdDomain
+    entraExternalIdTenantId: entraExternalIdTenantId
+    entraExternalIdWebClientId: entraExternalIdWebClientId
+    entraExternalIdApiClientId: entraExternalIdApiClientId
+    entraExternalIdApiAudience: entraExternalIdApiAudience
+    shoppingApiScope: shoppingApiScope
+    sqlServerFullyQualifiedDomainName: sql.outputs.sqlServerFullyQualifiedDomainName
+    sqlDatabaseName: sql.outputs.sqlDatabaseName
+    storageBlobEndpoint: storage.outputs.storageBlobEndpoint
+    productImagesContainerName: storage.outputs.productImagesContainerName
+    productImagePublicBaseUri: imageDelivery.outputs.productImagePublicBaseUri
+    productImageSasLifetimeMinutes: productImageSasLifetimeMinutes
+    redisConnectionStringSecretUri: redis.outputs.redisConnectionStringSecretUri
+    hasWebClientSecret: hasWebClientSecret
+    webClientSecretUri: keyVault.outputs.webClientSecretUri
+    tags: tags
   }
   dependsOn: [
-    webAcrPullAssignment
-    webKeyVaultSecretsUserAssignment
+    accessControl
   ]
-}
-
-resource blobDataContributorRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' existing = {
-  scope: subscription()
-  name: 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
-}
-
-resource acrPullRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' existing = {
-  scope: subscription()
-  name: '7f951dda-4ed3-4680-a7ca-43fe172d538d'
-}
-
-resource acrPushRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' existing = {
-  scope: subscription()
-  name: '8311e382-0749-4cb8-b61a-304f252e45ec'
-}
-
-resource deploymentAcrPushAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(existingContainerRegistry.id, deploymentPrincipalObjectId, acrPushRole.id)
-  scope: existingContainerRegistry
-  properties: {
-    principalId: deploymentPrincipalObjectId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId: acrPushRole.id
-  }
-}
-
-resource webAcrPullAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(existingContainerRegistry.id, webIdentityResourceId, acrPullRole.id)
-  scope: existingContainerRegistry
-  properties: {
-    principalId: identities.outputs.webIdentityPrincipalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId: acrPullRole.id
-  }
-}
-
-resource apiAcrPullAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(existingContainerRegistry.id, apiIdentityResourceId, acrPullRole.id)
-  scope: existingContainerRegistry
-  properties: {
-    principalId: identities.outputs.apiIdentityPrincipalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId: acrPullRole.id
-  }
-}
-
-resource blobDelegatorRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' existing = {
-  scope: subscription()
-  name: 'db58b8e5-c6ad-4a2a-8342-4190687cbf4a'
-}
-
-resource apiBlobContributorAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(existingStorageAccount.id, apiIdentityResourceId, blobDataContributorRole.id)
-  scope: existingStorageAccount
-  properties: {
-    principalId: identities.outputs.apiIdentityPrincipalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId: blobDataContributorRole.id
-  }
-}
-
-resource apiBlobDelegatorAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(existingStorageAccount.id, apiIdentityResourceId, blobDelegatorRole.id)
-  scope: existingStorageAccount
-  properties: {
-    principalId: identities.outputs.apiIdentityPrincipalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId: blobDelegatorRole.id
-  }
-}
-
-resource keyVaultSecretsUserRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' existing = {
-  scope: subscription()
-  name: '4633458b-17de-408a-b874-0445c86b69e6'
-}
-
-resource webKeyVaultSecretsUserAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(existingKeyVault.id, webIdentityResourceId, keyVaultSecretsUserRole.id)
-  scope: existingKeyVault
-  properties: {
-    principalId: identities.outputs.webIdentityPrincipalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId: keyVaultSecretsUserRole.id
-  }
-}
-
-resource privateDnsZones 'Microsoft.Network/privateDnsZones@2024-06-01' = [for zoneName in privateDnsZoneNames: if (enablePrivateEndpoints) {
-  name: zoneName
-  location: 'global'
-  tags: tags
-}]
-
-resource privateDnsZoneLinks 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2024-06-01' = [for (zoneName, index) in privateDnsZoneNames: if (enablePrivateEndpoints) {
-  parent: privateDnsZones[index]
-  name: '${vnetName}-${index}'
-  location: 'global'
-  properties: {
-    registrationEnabled: false
-    virtualNetwork: {
-      id: network.outputs.virtualNetworkId
-    }
-  }
-}]
-
-resource storagePrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = if (enablePrivateEndpoints) {
-  name: 'pe-${storageAccountName}-blob'
-  location: location
-  tags: tags
-  properties: {
-    subnet: {
-      id: network.outputs.privateEndpointSubnetId
-    }
-    privateLinkServiceConnections: [
-      {
-        name: 'blob'
-        properties: {
-          privateLinkServiceId: storage.outputs.storageAccountId
-          groupIds: [
-            'blob'
-          ]
-        }
-      }
-    ]
-  }
-}
-
-resource sqlPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = if (enablePrivateEndpoints) {
-  name: 'pe-${sqlServerName}'
-  location: location
-  tags: tags
-  properties: {
-    subnet: {
-      id: network.outputs.privateEndpointSubnetId
-    }
-    privateLinkServiceConnections: [
-      {
-        name: 'sql'
-        properties: {
-          privateLinkServiceId: sql.outputs.sqlServerId
-          groupIds: [
-            'sqlServer'
-          ]
-        }
-      }
-    ]
-  }
-}
-
-resource keyVaultPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = if (enablePrivateEndpoints) {
-  name: 'pe-${keyVaultName}'
-  location: location
-  tags: tags
-  properties: {
-    subnet: {
-      id: network.outputs.privateEndpointSubnetId
-    }
-    privateLinkServiceConnections: [
-      {
-        name: 'vault'
-        properties: {
-          privateLinkServiceId: keyVault.outputs.keyVaultId
-          groupIds: [
-            'vault'
-          ]
-        }
-      }
-    ]
-  }
-}
-
-resource redisPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = if (enablePrivateEndpoints) {
-  name: 'pe-${redisName}'
-  location: location
-  tags: tags
-  properties: {
-    subnet: {
-      id: network.outputs.privateEndpointSubnetId
-    }
-    privateLinkServiceConnections: [
-      {
-        name: 'redis'
-        properties: {
-          privateLinkServiceId: redis.outputs.redisId
-          groupIds: [
-            'redisEnterprise'
-          ]
-        }
-      }
-    ]
-  }
-}
-
-resource containerRegistryPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = if (enablePrivateEndpoints) {
-  name: 'pe-${containerRegistryName}'
-  location: location
-  tags: tags
-  properties: {
-    subnet: {
-      id: network.outputs.privateEndpointSubnetId
-    }
-    privateLinkServiceConnections: [
-      {
-        name: 'registry'
-        properties: {
-          privateLinkServiceId: containerRegistry.outputs.containerRegistryId
-          groupIds: [
-            'registry'
-          ]
-        }
-      }
-    ]
-  }
-}
-
-resource storagePrivateDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-05-01' = if (enablePrivateEndpoints) {
-  parent: storagePrivateEndpoint
-  name: 'default'
-  properties: {
-    privateDnsZoneConfigs: [
-      {
-        name: 'blob'
-        properties: {
-          privateDnsZoneId: privateDnsZones[0].id
-        }
-      }
-    ]
-  }
-}
-
-resource sqlPrivateDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-05-01' = if (enablePrivateEndpoints) {
-  parent: sqlPrivateEndpoint
-  name: 'default'
-  properties: {
-    privateDnsZoneConfigs: [
-      {
-        name: 'sql'
-        properties: {
-          privateDnsZoneId: privateDnsZones[1].id
-        }
-      }
-    ]
-  }
-}
-
-resource keyVaultPrivateDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-05-01' = if (enablePrivateEndpoints) {
-  parent: keyVaultPrivateEndpoint
-  name: 'default'
-  properties: {
-    privateDnsZoneConfigs: [
-      {
-        name: 'vault'
-        properties: {
-          privateDnsZoneId: privateDnsZones[2].id
-        }
-      }
-    ]
-  }
-}
-
-resource redisPrivateDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-05-01' = if (enablePrivateEndpoints) {
-  parent: redisPrivateEndpoint
-  name: 'default'
-  properties: {
-    privateDnsZoneConfigs: [
-      {
-        name: 'redis'
-        properties: {
-          privateDnsZoneId: privateDnsZones[3].id
-        }
-      }
-    ]
-  }
-}
-
-resource containerRegistryPrivateDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-05-01' = if (enablePrivateEndpoints) {
-  parent: containerRegistryPrivateEndpoint
-  name: 'default'
-  properties: {
-    privateDnsZoneConfigs: [
-      {
-        name: 'registry'
-        properties: {
-          privateDnsZoneId: privateDnsZones[4].id
-        }
-      }
-    ]
-  }
 }
 
 output webContainerAppName string = webContainerAppName
-output webContainerAppFqdn string = deployApplicationContainers ? webContainerApp!.properties.configuration.ingress.fqdn : ''
-output webRedirectUri string = deployApplicationContainers ? 'https://${webContainerApp!.properties.configuration.ingress.fqdn}/signin-oidc' : ''
+output webContainerAppFqdn string = deployApplicationContainers ? containerApps!.outputs.webContainerAppFqdn : ''
+output webRedirectUri string = deployApplicationContainers ? containerApps!.outputs.webRedirectUri : ''
 output apiContainerAppName string = apiContainerAppName
 output apiIdentityName string = identities.outputs.apiIdentityName
 output apiIdentityPrincipalId string = identities.outputs.apiIdentityPrincipalId
