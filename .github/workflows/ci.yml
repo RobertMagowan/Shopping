@@ -33,6 +33,10 @@ jobs:
       - name: Restore
         run: dotnet restore Shopping.slnx
 
+      - name: Test bootstrap helpers
+        shell: pwsh
+        run: ./scripts/tests/Test-BootstrapShared.ps1
+
       - name: Build
         run: dotnet build Shopping.slnx --configuration "$CONFIGURATION" --no-restore
 
