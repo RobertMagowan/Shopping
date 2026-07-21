@@ -1,7 +1,7 @@
 namespace Shopping.Infrastructure;
 
 using Application.Catalog;
-using Azure.Core;
+using Azure.Identity;
 using Azure.Storage.Blobs;
 using Catalog;
 using Microsoft.Data.SqlClient;
@@ -71,20 +71,12 @@ public static class DependencyInjection
 
         if (!string.IsNullOrWhiteSpace(options.ServiceUri))
         {
-            return new BlobServiceClient(new Uri(options.ServiceUri, UriKind.Absolute), CreateDefaultAzureCredential(), clientOptions);
+            return new BlobServiceClient(new Uri(options.ServiceUri, UriKind.Absolute), new DefaultAzureCredential(), clientOptions);
         }
 
         throw new InvalidOperationException("Missing product image storage configuration. Configure either " +
                                             "'ProductImageStorage:ConnectionString' for local development or " +
                                             "'ProductImageStorage:ServiceUri' for Azure-hosted environments.");
-    }
-
-    private static TokenCredential CreateDefaultAzureCredential()
-    {
-        var credentialType = Type.GetType("Azure.Identity.DefaultAzureCredential, Azure.Identity",
-                                          true);
-
-        return (TokenCredential)Activator.CreateInstance(credentialType!)!;
     }
 
     private static void ValidateDatabaseAuthentication(string connectionString,
