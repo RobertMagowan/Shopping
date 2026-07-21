@@ -35,7 +35,11 @@ jobs:
 
       - name: Test bootstrap helpers
         shell: pwsh
-        run: ./scripts/tests/Test-BootstrapShared.ps1
+        run: |
+          Get-ChildItem ./scripts/tests/Test-*.ps1 | ForEach-Object {
+            & $_.FullName
+            if (-not $?) { exit 1 }
+          }
 
       - name: Build
         run: dotnet build Shopping.slnx --configuration "$CONFIGURATION" --no-restore
