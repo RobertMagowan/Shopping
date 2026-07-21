@@ -20,8 +20,18 @@ resource sqlServer 'Microsoft.Sql/servers@2023-08-01-preview' = {
   location: location
   tags: tags
   properties: {
-    administratorLogin: sqlAdministratorLogin
-    administratorLoginPassword: sqlAdministratorPassword
+    ...(environmentName == 'dev' ? {
+      administratorLogin: sqlAdministratorLogin
+      administratorLoginPassword: sqlAdministratorPassword
+    } : {})
+    administrators: {
+      administratorType: 'ActiveDirectory'
+      azureADOnlyAuthentication: environmentName != 'dev'
+      login: sqlEntraAdministratorLogin
+      principalType: 'Application'
+      sid: deploymentPrincipalObjectId
+      tenantId: tenant().tenantId
+    }
     minimalTlsVersion: '1.2'
     publicNetworkAccess: enablePrivateEndpoints ? 'Disabled' : 'Enabled'
   }
@@ -37,17 +47,6 @@ resource sqlDatabase 'Microsoft.Sql/servers/databases@2023-08-01-preview' = {
   }
   properties: {
     zoneRedundant: environmentName == 'prod'
-  }
-}
-
-resource sqlEntraAdministrator 'Microsoft.Sql/servers/administrators@2023-08-01-preview' = {
-  parent: sqlServer
-  name: 'ActiveDirectory'
-  properties: {
-    administratorType: 'ActiveDirectory'
-    login: sqlEntraAdministratorLogin
-    sid: deploymentPrincipalObjectId
-    tenantId: tenant().tenantId
   }
 }
 

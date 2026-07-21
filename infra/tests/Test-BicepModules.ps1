@@ -35,4 +35,16 @@ if ($resourceDeclarations -gt 0) {
     throw "environment.bicep must orchestrate modules only; found $resourceDeclarations resource declarations."
 }
 
+$sqlModulePath = Join-Path $infraRoot 'modules/sql.bicep'
+$sqlModule = Get-Content -LiteralPath $sqlModulePath -Raw
+$devSqlCredentialsPattern = "(?s)\.\.\.\(environmentName == 'dev' \? \{.*administratorLogin:\s*sqlAdministratorLogin.*administratorLoginPassword:\s*sqlAdministratorPassword.*\} : \{\}\)"
+
+if ($sqlModule -notmatch $devSqlCredentialsPattern) {
+    throw 'sql.bicep must supply SQL administrator credentials only in dev.'
+}
+
+if ($sqlModule -notmatch "azureADOnlyAuthentication:\s*environmentName != 'dev'") {
+    throw 'sql.bicep must enable Entra-only authentication outside dev.'
+}
+
 Write-Host 'Bicep module structure is valid.'
