@@ -37,4 +37,22 @@ if ((Get-ObjectPropertyValue -InputObject $objectValue -Name "Name") -ne "Shoppi
     throw "Expected object property lookup to remain supported."
 }
 
+Set-ObjectPropertyValue `
+    -InputObject $objectValue `
+    -Name "Name" `
+    -Value "Shopping Updated"
+
+if ((Get-ObjectPropertyValue -InputObject $objectValue -Name "Name") -ne "Shopping Updated") {
+    throw "Expected existing object property updates to remain supported."
+}
+
+Set-ObjectPropertyValue `
+    -InputObject $objectValue `
+    -Name "DisplayName" `
+    -Value "Shop"
+
+if ((Get-ObjectPropertyValue -InputObject $objectValue -Name "DisplayName") -ne "Shop") {
+    throw "Expected new object property creation to remain supported."
+}
+
 Write-Host "Bootstrap shared helper tests passed."
