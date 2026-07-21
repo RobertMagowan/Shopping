@@ -17,9 +17,13 @@ public sealed class ProductImageBlobSeedHostedService(BlobContainerClient contai
             return;
         }
 
-        await containerClient.CreateIfNotExistsAsync(PublicAccessType.Blob,
+        var publicAccessType = options.UseSharedAccessSignatures
+            ? PublicAccessType.None
+            : PublicAccessType.Blob;
+
+        await containerClient.CreateIfNotExistsAsync(publicAccessType,
                                                      cancellationToken: cancellationToken);
-        await containerClient.SetAccessPolicyAsync(PublicAccessType.Blob,
+        await containerClient.SetAccessPolicyAsync(publicAccessType,
                                                    cancellationToken: cancellationToken);
 
         foreach (var seed in ProductImageBlobSeedData.Items)

@@ -615,7 +615,7 @@ resource apiContainerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployAp
             }
             {
               name: 'ProductImageStorage__UseSharedAccessSignatures'
-              value: string(enableFrontDoorImageDelivery)
+              value: 'true'
             }
             {
               name: 'ProductImageStorage__SharedAccessSignatureLifetimeMinutes'
