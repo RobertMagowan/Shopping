@@ -7,6 +7,7 @@ param(
 )
 
 . "$PSScriptRoot\bootstrap-shared.ps1"
+. "$PSScriptRoot\bootstrap-external-id-admin.ps1"
 
 $results = [Collections.Generic.List[object]]::new()
 
@@ -259,7 +260,18 @@ catch {
     Add-VerificationResult -Area "External ID apps" -Status "Fail" -Detail $_.Exception.Message
 }
 
-$bootstrapAdminUserObjectId = [string]$config.ExternalId.BootstrapAdminUserObjectId
+$bootstrapAdminEmail = [string](Get-ObjectPropertyValue `
+    -InputObject $config.ExternalId `
+    -Name "BootstrapAdminEmail")
+$bootstrapAdminUserObjectId = [string](Get-ObjectPropertyValue `
+    -InputObject $config.ExternalId `
+    -Name "BootstrapAdminUserObjectId")
+
+if ([string]::IsNullOrWhiteSpace($bootstrapAdminEmail)) {
+    $bootstrapAdminEmail = [string](Get-ObjectPropertyValue `
+        -InputObject $state.externalId `
+        -Name "bootstrapAdminEmail")
+}
 
 if ([string]::IsNullOrWhiteSpace($bootstrapAdminUserObjectId)) {
     $bootstrapAdminUserObjectId = [string](Get-ObjectPropertyValue `
@@ -268,23 +280,29 @@ if ([string]::IsNullOrWhiteSpace($bootstrapAdminUserObjectId)) {
 }
 
 if ([string]::IsNullOrWhiteSpace($bootstrapAdminUserObjectId)) {
-    Add-VerificationResult -Area "Bootstrap Admin" -Status "Manual" -Detail "No initial Admin object ID is configured."
+    Add-VerificationResult -Area "Bootstrap Admin" -Status "Manual" -Detail "No Bootstrap Admin identity is configured. Run interactive External ID bootstrap to create or adopt one."
 }
 else {
     try {
+        $user = Invoke-GraphGet `
+            -TenantId $state.externalId.tenantId `
+            -Uri "https://graph.microsoft.com/v1.0/users/$bootstrapAdminUserObjectId`?`$select=id,accountEnabled,identities"
         $webAssignments = Invoke-GraphGet -TenantId $state.externalId.tenantId -Uri "https://graph.microsoft.com/v1.0/servicePrincipals/$($state.externalId.webServicePrincipalObjectId)/appRoleAssignedTo"
         $apiAssignments = Invoke-GraphGet -TenantId $state.externalId.tenantId -Uri "https://graph.microsoft.com/v1.0/servicePrincipals/$($state.externalId.apiServicePrincipalObjectId)/appRoleAssignedTo"
         $webAdminRoleId = @($webApp.appRoles | Where-Object value -eq "Admin")[0].id
         $apiAdminRoleId = @($apiApp.appRoles | Where-Object value -eq "Admin")[0].id
         $webAssigned = @($webAssignments.value | Where-Object { $_.principalId -eq $bootstrapAdminUserObjectId -and $_.appRoleId -eq $webAdminRoleId }).Count -eq 1
         $apiAssigned = @($apiAssignments.value | Where-Object { $_.principalId -eq $bootstrapAdminUserObjectId -and $_.appRoleId -eq $apiAdminRoleId }).Count -eq 1
-
-        if ($webAssigned -and $apiAssigned) {
-            Add-VerificationResult -Area "Bootstrap Admin" -Status "Pass" -Detail "Initial administrator is assigned to both Web and API Admin roles."
-        }
-        else {
-            Add-VerificationResult -Area "Bootstrap Admin" -Status "Fail" -Detail "Initial administrator is missing one or both Admin assignments."
-        }
+        $adminVerification = Get-BootstrapAdminVerificationResult `
+            -User $user `
+            -Email $bootstrapAdminEmail `
+            -Domain $config.ExternalId.Domain `
+            -WebAdminAssigned $webAssigned `
+            -ApiAdminAssigned $apiAssigned
+        Add-VerificationResult `
+            -Area "Bootstrap Admin" `
+            -Status $adminVerification.Status `
+            -Detail $adminVerification.Detail
     }
     catch {
         Add-VerificationResult -Area "Bootstrap Admin" -Status "Fail" -Detail $_.Exception.Message

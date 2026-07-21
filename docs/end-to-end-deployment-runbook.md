@@ -212,6 +212,8 @@ Populate:
             test = ""
             prod = ""
         }
+        BootstrapAdminEmail = ""
+        # Compatibility only for an existing installation.
         BootstrapAdminUserObjectId = ""
     }
 
@@ -224,7 +226,7 @@ Populate:
 }
 ```
 
-`scripts/bootstrap.config.psd1` and `scripts/bootstrap-state.local.json` are ignored. Neither may contain secrets. State stores generated application/object IDs and credential expiry metadata only.
+`scripts/bootstrap.config.psd1` and `scripts/bootstrap-state.local.json` are ignored. Neither may contain secrets. State stores the normalized bootstrap-admin email, generated application/object IDs, and credential expiry metadata only.
 
 Leave deployed Web base URLs empty initially. Container Apps assigns the default Web FQDN when the application images are first deployed.
 
@@ -249,6 +251,7 @@ Preview the complete operation:
   -GrantAdminConsent `
   -ConfigureLocalUserSecrets `
   -AllowInteractiveTenantSwitch `
+  -PromptForExternalIdValues `
   -WhatIf
 ```
 
@@ -274,7 +277,8 @@ Run all stages in one process when the resource and external tenants differ. Thi
   -RotateWebClientSecret `
   -GrantAdminConsent `
   -ConfigureLocalUserSecrets `
-  -AllowInteractiveTenantSwitch
+  -AllowInteractiveTenantSwitch `
+  -PromptForExternalIdValues
 ```
 
 What the stages do:
@@ -282,7 +286,7 @@ What the stages do:
 | Stage | Result |
 | --- | --- |
 | `AzureIdentity` | Registers required resource providers, creates/adopts the GitHub deployment app and service principal, adds exact dev/test/prod OIDC subjects, and assigns configured subscription roles. |
-| `ExternalId` | Creates/adopts Web/API applications, service principals, `access_as_user`, Web API permission, admin consent, app roles, redirect URIs, and optional bootstrap Admin assignments. |
+| `ExternalId` | Creates/adopts Web/API applications, service principals, `access_as_user`, Web API permission, admin consent, app roles, redirect URIs, and the local bootstrap Admin with both application-role assignments. |
 | `GitHub` | Creates dev/test/prod environments, writes variables/secrets, adds production reviewer protection, restricts production to `master`, and optionally manages the named branch ruleset. |
 
 Enable branch protection only after workflow files exist on `master`:
@@ -314,29 +318,33 @@ If Google, Facebook, Apple, or another provider is needed, configure it under **
 
 ## 11. Create The Bootstrap Customer Administrator
 
-The account used to administer the external tenant is not automatically a Shopping customer. A B2B administrative object and a customer object using the same email address are distinct identities.
+The account used to administer the external tenant is not automatically a Shopping customer. A B2B administrative object and a customer object using the same email address are distinct identities. The bootstrap operation below creates an application customer; it does not grant a Microsoft Entra directory role.
 
-Create a local customer account:
-
-1. In the external tenant, go to **Entra ID -> Users**.
-2. Select **New user -> Create new external user**.
-3. Under **Identities**, choose **Email**.
-4. Enter the customer's sign-in email and display name.
-5. Copy the generated temporary password directly to the intended administrator.
-6. Require password change at first sign-in.
-7. Create the user and copy the new customer's **Object ID**.
-8. Set `ExternalId.BootstrapAdminUserObjectId` in the ignored bootstrap configuration.
-9. Reapply `-Stage ExternalId`.
-
-You can create this customer immediately after creating the external tenant and set its object ID before section 8. That allows the initial `-Stage All` run to assign the Admin roles in one pass. Use `-PromptForExternalIdValues` only when interactively selecting an existing **customer** object; do not select the B2B tenant administrator.
+Sign in to the external tenant as at least a User Administrator and run from a trusted local terminal:
 
 ```powershell
 .\scripts\Initialize-ShoppingBootstrap.ps1 `
   -ConfigPath .\scripts\bootstrap.config.psd1 `
-  -Stage ExternalId
+  -Stage ExternalId `
+  -PromptForExternalIdValues
 ```
 
-This assigns `Admin` to the customer on both the Web and API enterprise applications. Do not store the temporary password in the repository, bootstrap state, command history, tickets, or workflow logs.
+At `Bootstrap application administrator email`, enter the intended local customer sign-in address.
+
+If no exact local `emailAddress` identity exists, bootstrap generates a cryptographically random 24-character password, creates the enabled local account with `forceChangePasswordNextSignIn`, and prints the email/password once in that terminal. Record it immediately. The value cannot be recovered from bootstrap state or a later run.
+
+If the account already exists, bootstrap adopts it without resetting or displaying its password. It then assigns `Admin` on both the Web and API enterprise applications. Rerunning the same command is idempotent.
+
+Do not run account creation in GitHub Actions or under PowerShell transcription. Do not store the temporary password in the repository, bootstrap configuration/state, user secrets, GitHub, Key Vault, tickets, command history, or workflow logs. Store `BootstrapAdminEmail` only when a non-interactive rerun must adopt an existing account. `BootstrapAdminUserObjectId` is a compatibility override for installations created by older bootstrap versions.
+
+The administrator signs in once with the temporary password and completes Entra's required password change. Then run:
+
+```powershell
+.\scripts\Test-ShoppingBootstrap.ps1 `
+  -ConfigPath .\scripts\bootstrap.config.psd1
+```
+
+The verifier confirms enabled status, the exact local identity, and both application `Admin` assignments. It cannot and does not inspect the password.
 
 ### Current Self-Sign-Up Limitation
 
@@ -356,7 +364,7 @@ Automated areas must report `Pass`:
 - state and canonical repository;
 - Azure OIDC credentials and RBAC;
 - External ID apps, roles, scope, permission, and consent;
-- optional bootstrap Admin assignments;
+- enabled bootstrap Admin local identity and both application-role assignments;
 - GitHub dev/test/prod values and protection;
 - managed `master` ruleset.
 

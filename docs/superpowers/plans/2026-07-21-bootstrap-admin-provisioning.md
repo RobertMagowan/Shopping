@@ -30,11 +30,11 @@
 
 **Interfaces:**
 - Produces: `Normalize-BootstrapAdminEmail`, `New-BootstrapAdminTemporaryPassword`, `Get-BootstrapAdminLocalUser`, and `New-BootstrapAdminLocalUser`.
-- Uses: `Invoke-AzRestJson` from `bootstrap-shared.ps1`.
+- Uses: an in-memory `Invoke-RestMethod` Graph helper so the password is never serialized to disk or a command-line argument.
 
 - [ ] **Step 1: Write failing password and identity-resolution tests**
 
-The test dot-sources `bootstrap-shared.ps1` and the new helper. It generates 100 passwords and requires length 24 plus uppercase, lowercase, digit, and symbol categories. Replace `Invoke-AzRestJson` with a fake returning local identities, then assert exact case-insensitive issuer/email matching, no match, and duplicate-match rejection.
+The test dot-sources `bootstrap-shared.ps1` and the new helper. It generates 100 passwords and requires length 24 plus uppercase, lowercase, digit, and symbol categories. Replace `Invoke-BootstrapAdminGraphJson` with a fake returning local identities, then assert exact case-insensitive issuer/email matching, no match, and duplicate-match rejection.
 
 ```powershell
 $passwords = 1..100 | ForEach-Object { New-BootstrapAdminTemporaryPassword }

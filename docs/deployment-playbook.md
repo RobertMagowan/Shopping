@@ -51,6 +51,27 @@ The first IaC deployment creates the platform resources and application identiti
 
 If the automatic path did not run, use **Actions -> infra -> Run workflow**, select `deploy` and `dev`, then run **Actions -> app** for `dev` after infrastructure succeeds.
 
+## Bootstrap Administrator Credential Step
+
+GitHub Actions never asks for or displays the Shopping administrator email or password. Account creation is an operator-driven External ID bootstrap action, separate from Azure infrastructure and application deployment.
+
+After the External ID applications exist, run locally while Azure CLI is signed in to the external tenant:
+
+```powershell
+.\scripts\Initialize-ShoppingBootstrap.ps1 `
+  -ConfigPath .\scripts\bootstrap.config.psd1 `
+  -Stage ExternalId `
+  -PromptForExternalIdValues
+```
+
+Enter the email at `Bootstrap application administrator email`. If the local account is missing, the same terminal displays a generated 24-character temporary password exactly once. The administrator uses it for the first sign-in and Entra requires an immediate password change. Bootstrap stores only the normalized email and object ID.
+
+Existing local accounts are adopted without password reset. A non-interactive run may adopt an account configured by email but cannot create one. The compatibility `BootstrapAdminUserObjectId` must agree with the local email identity when both are used.
+
+Run `Test-ShoppingBootstrap.ps1` afterward. It verifies that the account is enabled, has the expected local identity, and is assigned to both application `Admin` roles. This Shopping role is not a Microsoft Entra directory role.
+
+Do not put the generated password in GitHub secrets, Key Vault, configuration, state, workflow inputs, or deployment logs. This credential step is required once per installation, not once per deployment.
+
 ## Test Promotion
 
 1. Confirm the development deployment and customer sign-in.

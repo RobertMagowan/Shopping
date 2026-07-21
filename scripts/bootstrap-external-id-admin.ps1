@@ -1,6 +1,50 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+function Invoke-BootstrapAdminGraphJson {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Method,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Uri,
+
+        [object]$Body
+    )
+
+    $token = & az account get-access-token `
+        --resource-type ms-graph `
+        --query accessToken `
+        --output tsv `
+        --only-show-errors
+
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($token)) {
+        throw "Unable to acquire a Microsoft Graph token. Sign in to the External ID tenant first."
+    }
+
+    $json = $null
+
+    try {
+        $parameters = @{
+            Method = $Method
+            Uri = $Uri
+            Headers = @{ Authorization = "Bearer $token" }
+        }
+
+        if ($null -ne $Body) {
+            $json = $Body | ConvertTo-Json -Depth 20
+            $parameters.ContentType = "application/json"
+            $parameters.Body = $json
+        }
+
+        return Invoke-RestMethod @parameters
+    }
+    finally {
+        $json = $null
+        $token = $null
+    }
+}
+
 function Normalize-BootstrapAdminEmail {
     param(
         [Parameter(Mandatory = $true)]
@@ -93,6 +137,84 @@ function New-BootstrapAdminTemporaryPassword {
     return -join $characters
 }
 
+function Test-BootstrapAdminLocalIdentity {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$User,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Email,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Domain
+    )
+
+    $normalizedEmail = Normalize-BootstrapAdminEmail -Email $Email
+    $normalizedDomain = $Domain.Trim()
+    $identities = @(Get-ObjectPropertyValue -InputObject $User -Name "identities")
+    $matches = @($identities | Where-Object {
+        [string]::Equals([string]$_.signInType, "emailAddress", [StringComparison]::OrdinalIgnoreCase) -and
+        [string]::Equals([string]$_.issuer, $normalizedDomain, [StringComparison]::OrdinalIgnoreCase) -and
+        [string]::Equals([string]$_.issuerAssignedId, $normalizedEmail, [StringComparison]::OrdinalIgnoreCase)
+    })
+
+    return $matches.Count -gt 0
+}
+
+function Get-BootstrapAdminVerificationResult {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$User,
+
+        [string]$Email,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Domain,
+
+        [Parameter(Mandatory = $true)]
+        [bool]$WebAdminAssigned,
+
+        [Parameter(Mandatory = $true)]
+        [bool]$ApiAdminAssigned
+    )
+
+    $userObjectId = [string](Get-ObjectPropertyValue -InputObject $User -Name "id")
+
+    if ($User.accountEnabled -ne $true) {
+        return [pscustomobject]@{
+            Status = "Fail"
+            Detail = "Bootstrap Admin '$userObjectId' is disabled."
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($Email) -and
+        -not (Test-BootstrapAdminLocalIdentity -User $User -Email $Email -Domain $Domain)) {
+        return [pscustomobject]@{
+            Status = "Fail"
+            Detail = "Bootstrap Admin '$userObjectId' does not have the expected local email identity '$Email'."
+        }
+    }
+
+    if (-not $WebAdminAssigned -or -not $ApiAdminAssigned) {
+        return [pscustomobject]@{
+            Status = "Fail"
+            Detail = "Bootstrap Admin '$userObjectId' is missing one or both application Admin assignments."
+        }
+    }
+
+    $identityDetail = if ([string]::IsNullOrWhiteSpace($Email)) {
+        "legacy object-ID configuration"
+    }
+    else {
+        Normalize-BootstrapAdminEmail -Email $Email
+    }
+
+    return [pscustomobject]@{
+        Status = "Pass"
+        Detail = "Enabled administrator '$identityDetail' is assigned to both Web and API Admin roles."
+    }
+}
+
 function Get-BootstrapAdminLocalUser {
     param(
         [Parameter(Mandatory = $true)]
@@ -108,18 +230,13 @@ function Get-BootstrapAdminLocalUser {
     $uri = "https://graph.microsoft.com/v1.0/users?`$select=id,accountEnabled,displayName,mail,identities"
 
     while (-not [string]::IsNullOrWhiteSpace($uri)) {
-        $response = Invoke-AzRestJson -Method "GET" -Uri $uri -Body $null
+        $response = Invoke-BootstrapAdminGraphJson -Method "GET" -Uri $uri -Body $null
         $users += @($response.value)
         $uri = [string](Get-ObjectPropertyValue -InputObject $response -Name "@odata.nextLink")
     }
 
     $matches = @($users | Where-Object {
-        $user = $_
-        @($user.identities | Where-Object {
-            [string]::Equals([string]$_.signInType, "emailAddress", [StringComparison]::OrdinalIgnoreCase) -and
-            [string]::Equals([string]$_.issuer, $normalizedDomain, [StringComparison]::OrdinalIgnoreCase) -and
-            [string]::Equals([string]$_.issuerAssignedId, $normalizedEmail, [StringComparison]::OrdinalIgnoreCase)
-        }).Count -gt 0
+        Test-BootstrapAdminLocalIdentity -User $_ -Email $normalizedEmail -Domain $normalizedDomain
     })
 
     if ($matches.Count -gt 1) {
@@ -166,7 +283,7 @@ function New-BootstrapAdminLocalUser {
         passwordPolicies = "DisablePasswordExpiration"
     }
 
-    $user = Invoke-AzRestJson `
+    $user = Invoke-BootstrapAdminGraphJson `
         -Method "POST" `
         -Uri "https://graph.microsoft.com/v1.0/users" `
         -Body $body
@@ -230,28 +347,10 @@ function Resolve-BootstrapAdminLocalUser {
 
     $temporaryPassword = New-BootstrapAdminTemporaryPassword
 
-    try {
-        $user = New-BootstrapAdminLocalUser `
-            -Email $normalizedEmail `
-            -Domain $Domain `
-            -TemporaryPassword $temporaryPassword
-    }
-    catch {
-        $user = Get-BootstrapAdminLocalUser `
-            -Email $normalizedEmail `
-            -Domain $Domain
-
-        if ($null -ne $user) {
-            return [pscustomobject]@{
-                Email = $normalizedEmail
-                User = $user
-                Created = $false
-                TemporaryPassword = $null
-            }
-        }
-
-        throw
-    }
+    $user = New-BootstrapAdminLocalUser `
+        -Email $normalizedEmail `
+        -Domain $Domain `
+        -TemporaryPassword $temporaryPassword
 
     $secureTemporaryPassword = ConvertTo-SecureString `
         -String $temporaryPassword `

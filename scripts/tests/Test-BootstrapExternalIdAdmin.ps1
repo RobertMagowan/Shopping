@@ -89,7 +89,7 @@ $script:graphUsers = @(
 $script:capturedCreateBody = $null
 $script:createRequestCount = 0
 
-function Invoke-AzRestJson {
+function Invoke-BootstrapAdminGraphJson {
     param(
         [string]$Method,
         [string]$Uri,
@@ -158,6 +158,61 @@ Assert-Equal -Actual $script:capturedCreateBody.passwordProfile.password -Expect
 Assert-Equal -Actual $script:capturedCreateBody.passwordProfile.forceChangePasswordNextSignIn -Expected $true -Message 'First-login password change is not required.'
 Assert-Equal -Actual $script:capturedCreateBody.identities[0].issuerAssignedId -Expected 'new.admin@example.com' -Message 'Email identity is incorrect.'
 
+if (-not (Test-BootstrapAdminLocalIdentity `
+    -User $script:graphUsers[0] `
+    -Email 'admin.user@example.com' `
+    -Domain 'shopping1970.onmicrosoft.com')) {
+    throw 'Expected local email identity was not recognized.'
+}
+
+if (Test-BootstrapAdminLocalIdentity `
+    -User $script:graphUsers[0] `
+    -Email 'different@example.com' `
+    -Domain 'shopping1970.onmicrosoft.com') {
+    throw 'A different local email identity was incorrectly accepted.'
+}
+
+if (Test-BootstrapAdminLocalIdentity `
+    -User $script:graphUsers[1] `
+    -Email 'admin.user@example.com' `
+    -Domain 'shopping1970.onmicrosoft.com') {
+    throw 'A userName identity was incorrectly accepted as an email identity.'
+}
+
+$verifiedAdmin = Get-BootstrapAdminVerificationResult `
+    -User $script:graphUsers[0] `
+    -Email 'admin.user@example.com' `
+    -Domain 'shopping1970.onmicrosoft.com' `
+    -WebAdminAssigned $true `
+    -ApiAdminAssigned $true
+Assert-Equal -Actual $verifiedAdmin.Status -Expected 'Pass' -Message 'Valid Bootstrap Admin verification failed.'
+
+$disabledUser = $script:graphUsers[0].PSObject.Copy()
+$disabledUser.accountEnabled = $false
+$disabledAdmin = Get-BootstrapAdminVerificationResult `
+    -User $disabledUser `
+    -Email 'admin.user@example.com' `
+    -Domain 'shopping1970.onmicrosoft.com' `
+    -WebAdminAssigned $true `
+    -ApiAdminAssigned $true
+Assert-Equal -Actual $disabledAdmin.Status -Expected 'Fail' -Message 'Disabled Bootstrap Admin was accepted.'
+
+$wrongIdentityAdmin = Get-BootstrapAdminVerificationResult `
+    -User $script:graphUsers[0] `
+    -Email 'different@example.com' `
+    -Domain 'shopping1970.onmicrosoft.com' `
+    -WebAdminAssigned $true `
+    -ApiAdminAssigned $true
+Assert-Equal -Actual $wrongIdentityAdmin.Status -Expected 'Fail' -Message 'Mismatched Bootstrap Admin identity was accepted.'
+
+$missingAssignmentAdmin = Get-BootstrapAdminVerificationResult `
+    -User $script:graphUsers[0] `
+    -Email 'admin.user@example.com' `
+    -Domain 'shopping1970.onmicrosoft.com' `
+    -WebAdminAssigned $true `
+    -ApiAdminAssigned $false
+Assert-Equal -Actual $missingAssignmentAdmin.Status -Expected 'Fail' -Message 'Missing Bootstrap Admin role assignment was accepted.'
+
 $existingResolution = Resolve-BootstrapAdminLocalUser `
     -Email 'admin.user@example.com' `
     -Domain 'shopping1970.onmicrosoft.com' `
@@ -212,5 +267,11 @@ if ($createdResolution.TemporaryPassword -isnot [Security.SecureString]) {
 $createdPassword = ConvertFrom-SecureStringValue -SecureValue $createdResolution.TemporaryPassword
 Assert-Equal -Actual $script:capturedCreateBody.passwordProfile.password -Expected $createdPassword -Message 'Generated password did not reach Graph.'
 $createdPassword = $null
+
+$helperSource = Get-Content -LiteralPath (Join-Path $scriptsRoot 'bootstrap-external-id-admin.ps1') -Raw
+
+if ($helperSource -match 'New-TemporaryFile') {
+    throw 'Bootstrap administrator Graph requests must not persist credentials in a temporary file.'
+}
 
 Write-Host 'External ID bootstrap administrator helper tests passed.'

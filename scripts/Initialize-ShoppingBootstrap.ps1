@@ -376,23 +376,28 @@ if ($runExternalId) {
 
     $bootstrapState = Read-BootstrapState -Path $StatePath
     $externalIdState = Get-OrAddStateSection -State $bootstrapState -Name "externalId"
-    $bootstrapAdminEmail = [string](Get-ObjectPropertyValue `
+    $configuredBootstrapAdminEmail = [string](Get-ObjectPropertyValue `
         -InputObject $config.ExternalId `
         -Name "BootstrapAdminEmail")
-    $bootstrapAdminUserObjectId = [string](Get-ObjectPropertyValue `
+    $configuredBootstrapAdminUserObjectId = [string](Get-ObjectPropertyValue `
         -InputObject $config.ExternalId `
         -Name "BootstrapAdminUserObjectId")
 
+    $stateBootstrapAdminEmail = [string](Get-ObjectPropertyValue `
+        -InputObject $externalIdState `
+        -Name "bootstrapAdminEmail")
+    $stateBootstrapAdminUserObjectId = [string](Get-ObjectPropertyValue `
+        -InputObject $externalIdState `
+        -Name "bootstrapAdminUserObjectId")
+    $bootstrapAdminEmail = $configuredBootstrapAdminEmail
+    $bootstrapAdminUserObjectId = $configuredBootstrapAdminUserObjectId
+
     if ([string]::IsNullOrWhiteSpace($bootstrapAdminEmail)) {
-        $bootstrapAdminEmail = [string](Get-ObjectPropertyValue `
-            -InputObject $externalIdState `
-            -Name "bootstrapAdminEmail")
+        $bootstrapAdminEmail = $stateBootstrapAdminEmail
     }
 
     if ([string]::IsNullOrWhiteSpace($bootstrapAdminUserObjectId)) {
-        $bootstrapAdminUserObjectId = [string](Get-ObjectPropertyValue `
-            -InputObject $externalIdState `
-            -Name "bootstrapAdminUserObjectId")
+        $bootstrapAdminUserObjectId = $stateBootstrapAdminUserObjectId
     }
 
     if ($PromptForExternalIdValues) {
@@ -401,10 +406,18 @@ if ($runExternalId) {
     }
 
     if (-not [string]::IsNullOrWhiteSpace($bootstrapAdminEmail)) {
+        $expectedBootstrapAdminUserObjectId = $bootstrapAdminUserObjectId
+
+        if ($PromptForExternalIdValues -and
+            [string]::IsNullOrWhiteSpace($stateBootstrapAdminEmail) -and
+            [string]::IsNullOrWhiteSpace($configuredBootstrapAdminUserObjectId)) {
+            $expectedBootstrapAdminUserObjectId = ""
+        }
+
         $bootstrapAdminResolution = Resolve-BootstrapAdminLocalUser `
             -Email $bootstrapAdminEmail `
             -Domain $config.ExternalId.Domain `
-            -ExpectedUserObjectId $bootstrapAdminUserObjectId `
+            -ExpectedUserObjectId $expectedBootstrapAdminUserObjectId `
             -AllowCreate:$PromptForExternalIdValues `
             -WhatIf:$WhatIfPreference
         $bootstrapAdminEmail = $bootstrapAdminResolution.Email
@@ -430,6 +443,10 @@ if ($runExternalId) {
             if ($PSCmdlet.ShouldProcess($StatePath, "Checkpoint Bootstrap Admin identity without credentials")) {
                 Save-BootstrapState -State $bootstrapState -Path $StatePath
             }
+        }
+        elseif ($WhatIfPreference -and
+                [string]::IsNullOrWhiteSpace($expectedBootstrapAdminUserObjectId)) {
+            $bootstrapAdminUserObjectId = ""
         }
     }
 

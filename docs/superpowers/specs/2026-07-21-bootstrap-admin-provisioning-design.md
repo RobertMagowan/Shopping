@@ -51,13 +51,13 @@ The script uses Microsoft Graph `POST /v1.0/users` with:
 - `passwordPolicies = DisablePasswordExpiration`;
 - a generated password profile with `forceChangePasswordNextSignIn = true`.
 
-The Graph request body uses the existing temporary UTF-8 file mechanism. The file is removed in `finally`, and the password is never placed in command-line arguments.
+The Graph request body is sent directly from process memory with `Invoke-RestMethod`. The password is never written to a temporary file or placed in command-line arguments.
 
 ## Password Generation And Handling
 
 Generate a 24-character temporary password with `RandomNumberGenerator`. The result must include at least one uppercase letter, lowercase letter, digit, and permitted symbol. Character selection and shuffling both use cryptographically secure random bytes; `System.Random` is not used.
 
-The plaintext exists only in process memory and the short-lived Graph request file. It is not written to bootstrap configuration, bootstrap state, user secrets, GitHub variables, GitHub secrets, Key Vault, or application logs. The operation is interactive-only when it must create an account, preventing a temporary password from being exposed in GitHub Actions logs. Operators should not run the creation step under PowerShell transcription or screen sharing.
+The plaintext exists only in process memory. It is not written to bootstrap configuration, bootstrap state, user secrets, GitHub variables, GitHub secrets, Key Vault, temporary files, or application logs. The operation is interactive-only when it must create an account, preventing a temporary password from being exposed in GitHub Actions logs. Operators should not run the creation step under PowerShell transcription or screen sharing.
 
 ## Idempotency And Failure Handling
 
@@ -68,7 +68,7 @@ User resolution compares `issuer`, `signInType`, and `issuerAssignedId` case-ins
 - Multiple matches: stop and require manual directory cleanup.
 - Configured object ID disagrees with the email match: stop before assigning roles.
 - Graph creation succeeds but a role assignment fails: record enough non-secret identity state to make the rerun adopt the user and retry only missing assignments.
-- Graph creation returns a duplicate conflict: query once more and adopt only an exact identity match.
+- Graph creation returns a duplicate or ambiguous failure: stop and surface the error. A deliberate rerun adopts an exact existing identity without resetting its password.
 
 Bootstrap validates that Azure CLI is signed into the configured External ID tenant. The signed-in operator must have permission to create external users and assign application roles. Permission failures include the tenant, requested email, operation, and remediation guidance without exposing the generated password.
 

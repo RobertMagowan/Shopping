@@ -105,18 +105,27 @@ The workforce/B2B Microsoft provider is not automatically a customer identity pr
 
 ## 7. Bootstrap The First Admin
 
-The external-tenant administrator is not automatically a Shopping customer. A B2B administrator and a customer using the same email address are separate directory objects.
+The external-tenant administrator is not automatically a Shopping customer. A B2B administrator and a customer using the same email address are separate directory objects. Sign in to the external tenant as at least a User Administrator, then run locally:
 
-Create the first trusted customer in the external tenant:
+```powershell
+.\scripts\Initialize-ShoppingBootstrap.ps1 `
+  -ConfigPath .\scripts\bootstrap.config.psd1 `
+  -Stage ExternalId `
+  -PromptForExternalIdValues
+```
 
-1. Go to **Entra ID -> Users -> New user -> Create new external user**.
-2. Under **Identities**, select **Email** and enter the customer sign-in address.
-3. Enter the display name and copy the generated temporary password directly to the intended operator.
-4. Require password change on first sign-in and create the customer.
-5. Copy the customer object's Object ID to `ExternalId.BootstrapAdminUserObjectId` in the ignored bootstrap configuration.
-6. Rerun `Initialize-ShoppingBootstrap.ps1 -Stage ExternalId` to assign `Admin` to both Web and API.
+At `Bootstrap application administrator email`, enter the customer's sign-in email. For an exact existing local email identity, bootstrap preserves the account password. Otherwise it creates the account, displays a generated temporary password once, requires a change at first sign-in, records only the email/object ID, and assigns `Admin` to both Web and API.
 
-Do not place the temporary password in bootstrap configuration or state. After this, future privileged role management can be handled through the app when Microsoft Graph-backed admin features are implemented.
+The password appears in the local terminal, not in the Azure portal or GitHub deployment workflow. Record it immediately, do not run the creation step under transcription, and do not store it in configuration, state, source control, tickets, or workflow logs. It cannot be recovered by rerunning bootstrap.
+
+Verify afterward:
+
+```powershell
+.\scripts\Test-ShoppingBootstrap.ps1 `
+  -ConfigPath .\scripts\bootstrap.config.psd1
+```
+
+The application `Admin` role does not grant a Microsoft Entra directory role. `BootstrapAdminUserObjectId` is retained only for compatibility with existing installations.
 
 Privileged roles:
 
