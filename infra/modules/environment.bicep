@@ -100,7 +100,7 @@ var containerRegistryName = take('acr${compactWorkloadName}${environmentName}${s
 var logAnalyticsName = 'log-${workloadName}-${environmentName}-${suffix}'
 var appInsightsName = 'appi-${workloadName}-${environmentName}-${suffix}'
 var vnetName = 'vnet-${workloadName}-${environmentName}-${suffix}'
-var keyVaultName = 'kv-${environmentName}-${suffix}'
+var keyVaultName = take('kv${compactWorkloadName}${environmentName}${suffix}', 24)
 var storageAccountName = 'st${environmentName}${suffix}'
 var sqlServerName = 'sql-${workloadName}-${environmentName}-${suffix}'
 var sqlDatabaseName = 'sqldb-${workloadName}-${environmentName}'
@@ -312,8 +312,9 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   properties: {
     tenantId: tenant().tenantId
     enableRbacAuthorization: true
-    enablePurgeProtection: true
+    enablePurgeProtection: environmentName == 'prod'
     enableSoftDelete: true
+    softDeleteRetentionInDays: environmentName == 'prod' ? 90 : 7
     publicNetworkAccess: enablePrivateEndpoints ? 'Disabled' : 'Enabled'
     sku: {
       family: 'A'

@@ -134,6 +134,17 @@ else {
 }
 
 try {
+    Assert-ExternalIdAuthority `
+        -TenantId $config.ExternalId.TenantId `
+        -Domain $config.ExternalId.Domain `
+        -Instance $config.ExternalId.Instance
+    Add-VerificationResult -Area "External ID authority" -Status "Pass" -Detail "Tenant ID, primary domain, authority host, metadata issuer, and authorization endpoint match."
+}
+catch {
+    Add-VerificationResult -Area "External ID authority" -Status "Fail" -Detail $_.Exception.Message
+}
+
+try {
     $deploymentApp = Invoke-GraphGet -TenantId $state.azure.tenantId -Uri "https://graph.microsoft.com/v1.0/applications/$($state.azure.deploymentApplicationObjectId)"
     $credentials = Invoke-GraphGet -TenantId $state.azure.tenantId -Uri "https://graph.microsoft.com/v1.0/applications/$($state.azure.deploymentApplicationObjectId)/federatedIdentityCredentials"
     $stateSubjectPrefix = Get-ObjectPropertyValue -InputObject $state.bootstrap -Name "oidcSubjectPrefix"

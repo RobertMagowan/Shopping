@@ -334,6 +334,23 @@ jobs:
             exit 0
           fi
 
+          key_vaults=""
+
+          if [ "$ENVIRONMENT_NAME" != "prod" ]; then
+            key_vaults=$(az keyvault list \
+              --resource-group "$RESOURCE_GROUP_NAME" \
+              --query "[].[name,location]" \
+              --output tsv)
+          fi
+
           az group delete \
             --name "$RESOURCE_GROUP_NAME" \
             --yes
+
+          if [ -n "$key_vaults" ]; then
+            while IFS=$'\t' read -r vault_name vault_location; do
+              az keyvault purge \
+                --name "$vault_name" \
+                --location "$vault_location"
+            done <<< "$key_vaults"
+          fi
