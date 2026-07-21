@@ -12,19 +12,21 @@ The template is tenant-neutral. A third party can deploy it into their own tenan
 
 The current baseline deploys:
 
-- VNet and subnets for App Gateway, APIM, App Service integration, and private endpoints.
-- Linux container App Services for `Shopping.Web` and `Shopping.Api`, each using a system-assigned managed identity.
-- App Service Plan with two workers in every environment and production zone redundancy.
-- Azure Container Registry with managed-identity image pulls.
+- An Azure Container Apps Consumption environment with external HTTPS ingress for `Shopping.Web` and internal-only ingress for `Shopping.Api`.
+- One warm replica per app in dev/test; production starts with two and can scale to ten.
+- User-assigned managed identities for runtime access, Key Vault references, and ACR image pulls.
+- Azure Container Registry with administrative credentials disabled.
 - Azure SQL server and database.
 - Storage account and `product-images` blob container.
 - Key Vault with RBAC and purge protection.
 - Azure Cache for Redis.
 - Log Analytics and workspace-based Application Insights.
-- Optional private endpoints and private DNS for App Service, SQL, Blob Storage, Key Vault, Redis, and Container Registry.
+- A VNet with a delegated Container Apps infrastructure subnet, reserved ingress/APIM subnets, and a private-endpoint subnet.
+- Optional private endpoints and Private DNS for SQL, Blob Storage, Key Vault, Redis, and Container Registry.
+- Production NAT Gateway egress with a stable public IP when private endpoints are enabled.
 - Optional Azure Front Door Premium image endpoint with a private Blob Storage origin.
 
-APIM, Application Gateway WAF, custom domains, and certificates are intentionally left for follow-up modules because they require tenant/domain-specific choices.
+APIM, Application Gateway WAF, custom domains, and certificates remain follow-up modules because they require tenant/domain-specific choices. Container Apps managed TLS is the baseline public ingress.
 
 ## Bootstrap
 
@@ -32,7 +34,7 @@ Use the [Shopping Environment Bootstrap Playbook](../docs/bootstrap.md) to confi
 
 The bootstrap resolves canonical GitHub repository casing before creating OIDC subjects, keeps generated IDs in an ignored non-secret state file, and pipes secret values directly to GitHub. It supports separate Azure resource and External ID tenants.
 
-Bootstrap also generates an environment-specific `RESOURCE_SUFFIX` before deployment. Bicep consumes that exact value, allowing the External ID callback for the future Web App hostname to be registered before the App Service exists. Configure `ExternalId.PublicWebBaseUrls` when an environment uses Application Gateway or a custom public domain instead of the direct App Service origin.
+Bootstrap generates an environment-specific `RESOURCE_SUFFIX` before deployment and Bicep consumes that exact value for stable resource names. Container Apps assigns its default FQDN during deployment. After the first `app` workflow, copy the reported Web origin to `ExternalId.PublicWebBaseUrls.<environment>` and rerun the External ID bootstrap stage before testing sign-in. A known custom domain can be configured before deployment.
 
 The final bootstrap step must be read-only verification:
 
@@ -53,34 +55,36 @@ infra/parameters/test.bicepparam
 infra/parameters/prod.bicepparam
 ```
 
-`dev` and `test` default to lower-cost settings and public App Service ingress:
+`dev` and `test` use the lower-cost Container Apps baseline:
 
 ```text
 enablePrivateEndpoints: false
-allowPublicAppAccess: true
+containerAppMinReplicas: 1
+containerAppMaxReplicas: 1
 ```
 
-Azure-hosted `dev` is not the same as local `Development`. Deployed App Services are configured with:
+Azure-hosted `dev` is not the same as local `Development`. Deployed Container Apps are configured with:
 
 ```text
 ASPNETCORE_ENVIRONMENT=Dev
 ```
 
-That prevents Azure-hosted development from loading local-only `appsettings.Development.json` values. Runtime settings for deployed `dev`, `test`, and `prod` come from App Service configuration. Sensitive values, such as the Web client secret and Redis connection string, are stored in Key Vault and exposed through App Service Key Vault references.
+That prevents Azure-hosted development from loading local-only `appsettings.Development.json` values. Runtime settings for deployed `dev`, `test`, and `prod` come from Container Apps environment variables. Sensitive values, such as the Web client secret and Redis connection string, stay in Key Vault and are exposed through Container Apps Key Vault secret references.
 
-The initial infrastructure deployment configures the App Services with the non-runnable `bootstrap` image tag. This intentionally allows ACR, app identities, RBAC, networking, and SQL to exist before the first image is built. The `app` workflow replaces it with an immutable commit SHA after pushing both images.
+The initial infrastructure deployment creates ACR, user-assigned identities, RBAC, networking, SQL, Redis, Storage, and Key Vault without creating the application containers. The `app` workflow pushes both immutable commit-SHA images, migrates SQL, and then creates or updates the Container Apps.
 
-`prod` defaults to private endpoints and disabled public App Service ingress:
+`prod` uses private PaaS endpoints, custom-VNet injection, explicit NAT egress, and a scalable replica range:
 
 ```text
 enablePrivateEndpoints: true
-allowPublicAppAccess: false
+containerAppMinReplicas: 2
+containerAppMaxReplicas: 10
 enableFrontDoorImageDelivery: true
 ```
 
-Production application deployment requires a Linux self-hosted GitHub runner carrying the labels `self-hosted`, `linux`, and `shopping-prod`. It must have Docker, outbound GitHub access, and private DNS/network access to ACR, Azure SQL, and the App Service private endpoints. Do not disable private ingress merely to use a hosted runner.
+Production application deployment requires a Linux self-hosted GitHub runner carrying the labels `self-hosted`, `linux`, and `shopping-prod`. It must have Docker, outbound GitHub access, and private DNS/network access to ACR and Azure SQL. Do not re-enable public PaaS access merely to use a hosted runner.
 
-When private endpoints are enabled, both App Services route application traffic and container image pulls through VNet integration. The Web and API runtime images enable ASP.NET Core forwarded headers so HTTPS redirection observes the original scheme after App Service TLS termination.
+`Shopping.Web` is the only public application endpoint. It calls `Shopping.Api` through internal Container Apps service discovery, and the API still validates the delegated Entra access token. The runtime images enable ASP.NET Core forwarded headers so HTTPS redirection observes the original scheme after Container Apps TLS termination.
 
 Production image delivery uses Azure Front Door Premium:
 
@@ -112,7 +116,7 @@ The `app` workflow:
 - pushes images to ACR using GitHub OIDC and Azure RBAC,
 - obtains a short-lived Azure SQL access token,
 - applies EF Core migrations and grants the API managed identity `db_datareader` and `db_datawriter`,
-- updates both App Services through Bicep and verifies `/healthz`.
+- updates both Container Apps through Bicep, verifies the API revision is healthy, and calls the public Web `/healthz` endpoint.
 
 ## First Deployment
 
@@ -120,9 +124,12 @@ The `app` workflow:
 2. Merge the reviewed IaC changes to `master`.
 3. The `infra` workflow automatically creates or reconciles the development resources.
 4. After `infra` succeeds, the `app` workflow builds, migrates, and deploys the first runnable images.
-5. Confirm both health checks and customer sign-in before promoting the same commit through test and production.
+5. Copy the Web origin from the workflow summary to `ExternalId.PublicWebBaseUrls.dev` and rerun the External ID bootstrap stage.
+6. Confirm health checks and customer sign-in before promoting the same commit through test and production.
 
 For an existing installation, reconcile the GitHub bootstrap stage before merging workflow changes that introduce new environment variables or required checks. This prevents the automatic development deployment from starting with stale GitHub configuration.
+
+When migrating an existing installation from App Service, rerun `Initialize-ShoppingBootstrap.ps1 -Stage AzureIdentity` before deployment. This registers the `Microsoft.App` and `Microsoft.ManagedIdentity` resource providers required by the Container Apps baseline.
 
 See the [Shopping CI/CD Deployment Playbook](../docs/deployment-playbook.md) for promotion, rollback, failure recovery, and teardown procedures.
 

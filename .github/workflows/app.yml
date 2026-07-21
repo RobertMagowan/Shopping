@@ -144,6 +144,9 @@ jobs:
           tenant-id: ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Enable Azure CLI extension installation
+        run: az config set extension.use_dynamic_install=yes_without_prompt
+
       - name: Resolve Azure resources
         shell: bash
         run: |
@@ -160,8 +163,9 @@ jobs:
             echo "RESOURCE_GROUP=$resource_group"
             echo "CONTAINER_REGISTRY_NAME=$registry_name"
             echo "CONTAINER_REGISTRY_SERVER=$registry_server"
-            echo "WEB_APP_NAME=app-${WORKLOAD_NAME}-web-${ENVIRONMENT_NAME}-${RESOURCE_SUFFIX}"
-            echo "API_APP_NAME=app-${WORKLOAD_NAME}-api-${ENVIRONMENT_NAME}-${RESOURCE_SUFFIX}"
+            echo "WEB_CONTAINER_APP_NAME=ca-${WORKLOAD_NAME}-web-${ENVIRONMENT_NAME}-${RESOURCE_SUFFIX}"
+            echo "API_CONTAINER_APP_NAME=ca-${WORKLOAD_NAME}-api-${ENVIRONMENT_NAME}-${RESOURCE_SUFFIX}"
+            echo "API_IDENTITY_NAME=id-${WORKLOAD_NAME}-api-${ENVIRONMENT_NAME}-${RESOURCE_SUFFIX}"
             echo "SQL_SERVER_NAME=sql-${WORKLOAD_NAME}-${ENVIRONMENT_NAME}-${RESOURCE_SUFFIX}"
             echo "SQL_DATABASE_NAME=sqldb-${WORKLOAD_NAME}-${ENVIRONMENT_NAME}"
           } >> "$GITHUB_ENV"
@@ -204,9 +208,9 @@ jobs:
         if: ${{ needs.deployment-target.outputs.migrateDatabase == 'true' }}
         shell: bash
         run: |
-          api_principal_id=$(az webapp identity show \
+          api_principal_id=$(az identity show \
             --resource-group "$RESOURCE_GROUP" \
-            --name "$API_APP_NAME" \
+            --name "$API_IDENTITY_NAME" \
             --query principalId \
             --output tsv)
           sql_server_fqdn=$(az sql server show \
@@ -224,7 +228,7 @@ jobs:
           ConnectionStrings__ShoppingDatabase="$connection_string" \
           AZURE_SQL_ACCESS_TOKEN="$sql_access_token" \
           SHOPPING_API_PRINCIPAL_ID="$api_principal_id" \
-          SHOPPING_API_PRINCIPAL_NAME="$API_APP_NAME" \
+          SHOPPING_API_PRINCIPAL_NAME="$API_IDENTITY_NAME" \
           dotnet run \
             --project tools/Shopping.DatabaseMigrator/Shopping.DatabaseMigrator.csproj \
             --configuration Release
@@ -249,14 +253,37 @@ jobs:
             --location "$AZURE_LOCATION" \
             --parameters "$PARAMETER_FILE"
 
+          web_redirect_uri=$(az deployment sub show \
+            --name "$deployment_name" \
+            --query properties.outputs.webRedirectUri.value \
+            --output tsv)
+          echo "WEB_REDIRECT_URI=$web_redirect_uri" >> "$GITHUB_ENV"
+
       - name: Verify container health
         shell: bash
         run: |
-          curl --fail --retry 20 --retry-delay 15 --retry-all-errors "https://${API_APP_NAME}.azurewebsites.net/healthz"
-          curl --fail --retry 20 --retry-delay 15 --retry-all-errors "https://${WEB_APP_NAME}.azurewebsites.net/healthz"
+          web_fqdn=$(az containerapp show \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$WEB_CONTAINER_APP_NAME" \
+            --query properties.configuration.ingress.fqdn \
+            --output tsv)
+          healthy_api_revision=$(az containerapp revision list \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$API_CONTAINER_APP_NAME" \
+            --query "[?properties.active && properties.healthState == 'Healthy'] | [0].name" \
+            --output tsv)
+
+          if [ -z "$healthy_api_revision" ]; then
+            echo "Shopping.Api has no active healthy Container Apps revision."
+            exit 1
+          fi
+
+          curl --fail --retry 20 --retry-delay 15 --retry-all-errors "https://${web_fqdn}/healthz"
 
           {
             echo "### Application deployment"
             printf "Environment: \`%s\`\n" "$ENVIRONMENT_NAME"
             printf "Image tag: \`%s\`\n" "$SOURCE_SHA"
+            printf "Web redirect URI: \`%s\`\n" "$WEB_REDIRECT_URI"
+            echo "Reconcile this URI through the External ID bootstrap stage before testing sign-in."
           } >> "$GITHUB_STEP_SUMMARY"
