@@ -263,7 +263,7 @@ function Assert-ExternalIdAuthority {
     $metadataUri = "$($instanceUri.GetLeftPart([UriPartial]::Authority))/$normalizedTenantId/v2.0/.well-known/openid-configuration"
 
     try {
-        $metadata = Invoke-RestMethod -Method Get -Uri $metadataUri -ErrorAction Stop
+        $metadata = Invoke-RestMethod -Method Get -Uri $metadataUri -TimeoutSec 30 -ErrorAction Stop
     }
     catch {
         throw "External ID metadata could not be loaded from '$metadataUri'. Verify that ExternalId.TenantId is the tenant ID shown on the '$Domain' External ID overview, not the Azure subscription's home tenant ID. $($_.Exception.Message)"
