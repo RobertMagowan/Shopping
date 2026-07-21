@@ -183,22 +183,25 @@ jobs:
           tenant-id: ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Enable Azure CLI extension installation
+        run: az config set extension.use_dynamic_install=yes_without_prompt
+
       - name: Preserve deployed image tag
         shell: bash
         run: |
           resource_group="rg-${WORKLOAD_NAME}-${DEPLOYMENT_INSTANCE}-${ENVIRONMENT_NAME}-${AZURE_LOCATION}"
-          web_app_name="app-${WORKLOAD_NAME}-web-${ENVIRONMENT_NAME}-${RESOURCE_SUFFIX}"
+          web_app_name="ca-${WORKLOAD_NAME}-web-${ENVIRONMENT_NAME}-${RESOURCE_SUFFIX}"
           image_tag=bootstrap
 
-          if az webapp show --resource-group "$resource_group" --name "$web_app_name" >/dev/null 2>&1; then
-            linux_fx_version=$(az webapp config show \
+          if az containerapp show --resource-group "$resource_group" --name "$web_app_name" >/dev/null 2>&1; then
+            deployed_image=$(az containerapp show \
               --resource-group "$resource_group" \
               --name "$web_app_name" \
-              --query linuxFxVersion \
+              --query "properties.template.containers[0].image" \
               --output tsv)
 
-            if [[ "$linux_fx_version" == *:* ]]; then
-              image_tag="${linux_fx_version##*:}"
+            if [[ "$deployed_image" == *:* ]]; then
+              image_tag="${deployed_image##*:}"
             fi
           fi
 
@@ -237,15 +240,13 @@ jobs:
             --name "$deployment_name" \
             --query properties.outputs.webRedirectUri.value \
             --output tsv)
-          expected_redirect_uri="https://app-${WORKLOAD_NAME}-web-${ENVIRONMENT_NAME}-${RESOURCE_SUFFIX}.azurewebsites.net/signin-oidc"
-
-          if [ "$web_redirect_uri" != "$expected_redirect_uri" ]; then
-            echo "Bicep output '$web_redirect_uri' differs from bootstrapped redirect '$expected_redirect_uri'."
-            exit 1
-          fi
 
           echo "### Infrastructure deployment" >> "$GITHUB_STEP_SUMMARY"
-          echo "Web redirect URI: \`$web_redirect_uri\`" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$web_redirect_uri" ]; then
+            echo "Web redirect URI: \`$web_redirect_uri\`" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Container images have not been deployed yet. The app workflow will report the Web redirect URI." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   infra-destroy:
     name: infra-destroy-${{ inputs.environmentName }}

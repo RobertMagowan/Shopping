@@ -265,17 +265,18 @@ function Get-GitHubOidcAudience {
 function Get-RequiredAzureResourceProviders {
     return @(
         "Microsoft.Authorization",
+        "Microsoft.App",
         "Microsoft.Cache",
         "Microsoft.Cdn",
         "Microsoft.ContainerRegistry",
         "Microsoft.Insights",
         "Microsoft.KeyVault",
+        "Microsoft.ManagedIdentity",
         "Microsoft.Network",
         "Microsoft.OperationalInsights",
         "Microsoft.Resources",
         "Microsoft.Sql",
-        "Microsoft.Storage",
-        "Microsoft.Web"
+        "Microsoft.Storage"
     )
 }
 
@@ -383,21 +384,7 @@ function Get-AuthoritativeWebRedirectUris {
             continue
         }
 
-        if ($environmentName -eq "prod") {
-            Write-Warning "Production currently uses its deterministic App Service callback. Set ExternalId.PublicWebBaseUrls.prod before routing users through a public Application Gateway or custom domain."
-        }
-
-        $resourceSuffix = Get-EnvironmentResourceSuffix `
-            -SubscriptionId $SubscriptionId `
-            -WorkloadName $WorkloadName `
-            -InstanceName $InstanceName `
-            -EnvironmentName $environmentName
-        $baseUrl = "https://app-$WorkloadName-web-$environmentName-$resourceSuffix.azurewebsites.net"
-        $redirectUri = ConvertTo-WebRedirectUri `
-            -BaseUrl $baseUrl `
-            -Source "Generated Shopping.Web URL for '$environmentName'"
-        Write-Host "Generated '$environmentName' Web callback: $redirectUri"
-        $redirectUri
+        Write-Warning "ExternalId.PublicWebBaseUrls.$environmentName is empty. Deploy the Container App, copy its Web origin from the workflow output, set this value, and rerun the ExternalId stage before testing sign-in."
     }
 
     return @($ConfiguredRedirectUris + $deployedRedirectUris | Sort-Object -Unique)

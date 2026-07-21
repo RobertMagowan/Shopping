@@ -7,7 +7,8 @@ This playbook covers recurring delivery after repository bootstrap. Use the [boo
 Before deploying:
 
 - `Test-ShoppingBootstrap.ps1` passes all automated checks.
-- Azure App Service quota covers the configured plan SKU and worker count in the target region.
+- Existing installations have rerun `Initialize-ShoppingBootstrap.ps1 -Stage AzureIdentity` to register `Microsoft.App` and `Microsoft.ManagedIdentity`.
+- Azure Container Apps Consumption quota is available in the target region.
 - The customer user flow and identity providers have been verified manually.
 - The pull request has all required status checks.
 - Production has a VNet-connected Linux runner labelled `self-hosted`, `linux`, and `shopping-prod`.
@@ -46,7 +47,7 @@ push to master
   -> Web and API health checks
 ```
 
-The first IaC deployment uses the placeholder `bootstrap` image tag while creating ACR and application identities. The chained application workflow then pushes commit-SHA images and replaces that tag.
+The first IaC deployment creates the platform resources and application identities without creating Container Apps. The chained application workflow pushes commit-SHA images, migrates SQL, and creates the runnable Container Apps. Copy the Web origin reported in the workflow summary to `ExternalId.PublicWebBaseUrls.dev`, then rerun the External ID bootstrap stage before testing sign-in.
 
 If the automatic path did not run, use **Actions -> infra -> Run workflow**, select `deploy` and `dev`, then run **Actions -> app** for `dev` after infrastructure succeeds.
 
@@ -56,7 +57,8 @@ If the automatic path did not run, use **Actions -> infra -> Run workflow**, sel
 2. Run `infra` manually with `operation: deploy` and `environmentName: test`.
 3. Review validation and `what-if` output, then wait for deployment success.
 4. Run `app` manually for `test` with database migration enabled.
-5. Verify `/healthz`, sign-in, catalog reads, image delivery, and role-protected operations.
+5. On the first deployment, reconcile the reported Web origin through `ExternalId.PublicWebBaseUrls.test` and the External ID bootstrap stage.
+6. Verify `/healthz`, sign-in, catalog reads, image delivery, and role-protected operations.
 
 Test has no deployment approval. Manual infrastructure runs do not automatically start the application workflow.
 
@@ -65,11 +67,12 @@ Test has no deployment approval. Manual infrastructure runs do not automatically
 Production deployments must run from `master` and require approval.
 
 1. Ensure the tested release commit is the current `master` commit.
-2. Confirm the production runner is online and has private DNS and network access to ACR, Azure SQL, and App Service.
+2. Confirm the production runner is online and has private DNS and network access to ACR and Azure SQL.
 3. Run `infra` manually for `prod`, review `what-if`, and approve the GitHub Environment deployment.
 4. Complete any pending Front Door private-link approval.
 5. Run `app` manually for `prod` with database migration enabled and approve the deployment.
-6. Verify health, authentication, authorization, catalog data, and image delivery through the public origin.
+6. On the first deployment, reconcile the reported Web origin through `ExternalId.PublicWebBaseUrls.prod` and the External ID bootstrap stage.
+7. Verify health, authentication, authorization, catalog data, and image delivery through the public origin.
 
 Infrastructure and application deployments require separate production approvals because they are separate workflow jobs.
 
@@ -88,11 +91,11 @@ The application workflow obtains a short-lived Azure SQL token and runs `Shoppin
 | --- | --- |
 | Static validation fails | Fix the branch; no Azure resources were changed. |
 | IaC validation or `what-if` fails | Correct Bicep or environment configuration and rerun `infra`. |
-| App Service reports `SubscriptionIsOverQuotaForSku` | In Azure **Quotas**, select **App Service**, filter to the target region, and request enough workers for the configured SKU and all concurrent plans. Rerun `infra` after approval. |
+| Container Apps reports a managed-environment or consumption-core quota error | In Azure **Quotas**, select **Azure Container Apps**, review the target region and subscription limits, and request only the required increase. Rerun `infra` after approval. |
 | IaC deployment fails | Inspect the Azure deployment operation, fix the cause, and rerun. The application workflow will not start after a failed automatic IaC run. |
 | Image build or push fails | Correct the Docker build or ACR access and rerun `app`. |
 | Migration fails | Inspect migrator output and SQL connectivity or permissions before rerunning. |
-| Health check fails | Inspect App Service container logs, image-pull status, configuration, and private DNS. Rerun `app` after correction. |
+| Health check fails | Inspect Container Apps revisions, probes, logs, image-pull status, configuration, and private DNS. Rerun `app` after correction. |
 
 Use the workflow run URL and Azure deployment name from the logs as the primary incident record. Application Insights and Log Analytics contain runtime telemetry after the containers start.
 
@@ -104,7 +107,7 @@ Application images use immutable commit-SHA tags. The supported rollback path is
 2. Merge the revert after required checks pass.
 3. Allow development to deploy automatically, then promote the revert through test and production.
 
-Do not change App Service image tags manually because the next Bicep deployment will reconcile them. Database rollback is not automated; use a deliberate forward-fix migration unless a reviewed database recovery plan requires otherwise.
+Do not change Container Apps image tags manually because the next Bicep deployment will reconcile them. Database rollback is not automated; use a deliberate forward-fix migration unless a reviewed database recovery plan requires otherwise.
 
 For IaC rollback, revert the IaC commit through a pull request and inspect `what-if` before deployment. Never assume an ARM resource can be downgraded or recreated without data loss.
 

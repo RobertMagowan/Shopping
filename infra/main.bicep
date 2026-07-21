@@ -45,16 +45,33 @@ param sqlEntraAdministratorLogin string = 'shopping-github-deploy'
 @description('Deploy private endpoints and private DNS for supported PaaS resources.')
 param enablePrivateEndpoints bool = false
 
-@description('Allow public inbound access to the Web and API App Services. Set false when private endpoints and private deployment access are ready.')
-param allowPublicAppAccess bool = true
-
-@description('App Service Plan SKU name.')
-param appServicePlanSkuName string = environmentName == 'prod' ? 'P1v3' : 'B1'
-
-@description('Number of App Service Plan workers shared by the Web and API apps.')
-@minValue(2)
+@description('Minimum warm replicas for each Container App.')
+@minValue(1)
 @maxValue(30)
-param appServicePlanInstanceCount int = 2
+param containerAppMinReplicas int = environmentName == 'prod' ? 2 : 1
+
+@description('Maximum replicas for each Container App.')
+@minValue(1)
+@maxValue(30)
+param containerAppMaxReplicas int = environmentName == 'prod' ? 10 : 1
+
+@description('CPU cores assigned to each Container App replica.')
+@allowed([
+  '0.5'
+  '1.0'
+  '2.0'
+  '4.0'
+])
+param containerAppCpu string = environmentName == 'prod' ? '1.0' : '0.5'
+
+@description('Memory assigned to each Container App replica.')
+@allowed([
+  '1Gi'
+  '2Gi'
+  '4Gi'
+  '8Gi'
+])
+param containerAppMemory string = environmentName == 'prod' ? '2Gi' : '1Gi'
 
 @description('Azure Container Registry SKU. Premium is required when private endpoints are enabled.')
 @allowed([
@@ -63,7 +80,7 @@ param appServicePlanInstanceCount int = 2
 ])
 param containerRegistrySkuName string = environmentName == 'prod' ? 'Premium' : 'Basic'
 
-@description('Immutable container image tag deployed to both Web and API App Services.')
+@description('Immutable container image tag deployed to both Container Apps.')
 @minLength(1)
 @maxLength(128)
 param containerImageTag string = 'bootstrap'
@@ -110,7 +127,7 @@ param entraExternalIdTenantId string = ''
 param entraExternalIdWebClientId string = ''
 
 @secure()
-@description('Shopping.Web app registration client secret. Stored in Key Vault and exposed to App Service as a Key Vault reference.')
+@description('Shopping.Web app registration client secret. Stored in Key Vault and exposed through a Container Apps secret reference.')
 param entraExternalIdWebClientSecret string = ''
 
 @description('Shopping.Api app registration client ID.')
@@ -149,9 +166,10 @@ module environmentResources 'modules/environment.bicep' = {
     deploymentPrincipalObjectId: deploymentPrincipalObjectId
     sqlEntraAdministratorLogin: sqlEntraAdministratorLogin
     enablePrivateEndpoints: enablePrivateEndpoints
-    allowPublicAppAccess: allowPublicAppAccess
-    appServicePlanSkuName: appServicePlanSkuName
-    appServicePlanInstanceCount: appServicePlanInstanceCount
+    containerAppMinReplicas: containerAppMinReplicas
+    containerAppMaxReplicas: containerAppMaxReplicas
+    containerAppCpu: containerAppCpu
+    containerAppMemory: containerAppMemory
     containerRegistrySkuName: containerRegistrySkuName
     containerImageTag: containerImageTag
     sqlDatabaseSkuName: sqlDatabaseSkuName
@@ -175,11 +193,12 @@ module environmentResources 'modules/environment.bicep' = {
 output resourceGroupName string = environmentResourceGroup.name
 output deploymentInstance string = deploymentInstance
 output resourceGroupLocation string = environmentResourceGroup.location
-output webAppName string = environmentResources.outputs.webAppName
-output webAppDefaultHostName string = environmentResources.outputs.webAppDefaultHostName
+output webContainerAppName string = environmentResources.outputs.webContainerAppName
+output webContainerAppFqdn string = environmentResources.outputs.webContainerAppFqdn
 output webRedirectUri string = environmentResources.outputs.webRedirectUri
-output apiAppName string = environmentResources.outputs.apiAppName
-output apiAppPrincipalId string = environmentResources.outputs.apiAppPrincipalId
+output apiContainerAppName string = environmentResources.outputs.apiContainerAppName
+output apiIdentityName string = environmentResources.outputs.apiIdentityName
+output apiIdentityPrincipalId string = environmentResources.outputs.apiIdentityPrincipalId
 output containerRegistryName string = environmentResources.outputs.containerRegistryName
 output containerRegistryLoginServer string = environmentResources.outputs.containerRegistryLoginServer
 output keyVaultName string = environmentResources.outputs.keyVaultName

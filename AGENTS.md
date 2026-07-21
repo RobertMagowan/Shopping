@@ -156,16 +156,16 @@ Pull requests should include a concise summary, testing evidence, configuration 
 
 ## Security & Configuration Tips
 
-All environments use Microsoft Entra External ID for authentication. `Shopping.Web` must use distributed token caching backed by Redis, not in-memory token caches. Do not commit secrets, connection strings with credentials, or keys. `appsettings.Development.json` is local-only. Azure-hosted `dev`, `test`, and `prod` settings must be supplied by App Service configuration created by IaC. Sensitive deployed values must be stored in Key Vault and exposed to App Service with Key Vault references.
+All environments use Microsoft Entra External ID for authentication. `Shopping.Web` must use distributed token caching backed by Redis, not in-memory token caches. Do not commit secrets, connection strings with credentials, or keys. `appsettings.Development.json` is local-only. Azure-hosted `dev`, `test`, and `prod` settings must be supplied as Container Apps environment variables created by IaC. Sensitive deployed values must be stored in Key Vault and exposed through Container Apps Key Vault secret references.
 
 Treat `scripts/bootstrap.config.psd1` and `scripts/bootstrap-state.local.json` as local bootstrap inputs and state; neither may contain secrets or be committed. Use `Initialize-ShoppingBootstrap.ps1` as the bootstrap entry point and run `Test-ShoppingBootstrap.ps1` after changes. The bootstrap scripts authoritatively own the dedicated Shopping app roles, scope, permissions, redirect URIs, GitHub environments, OIDC credentials, and named ruleset. Preview bootstrap changes with `-WhatIf`; do not make competing manual edits to script-owned properties.
 
 Use `-PromptForExternalIdValues` only for operator-driven bootstrap runs. CI and other unattended execution must provide configuration explicitly and must not enable interactive prompts.
 
-Do not independently change the App Service resource suffix algorithm in PowerShell, GitHub configuration, or Bicep. Bootstrap-generated `RESOURCE_SUFFIX` values make deployed hostnames and Entra redirect URIs deterministic before first deployment; update and verify all three locations together.
+Do not independently change the resource suffix algorithm in PowerShell, GitHub configuration, or Bicep. Bootstrap-generated `RESOURCE_SUFFIX` values keep globally named Azure resources deterministic; update and verify all three locations together. Container Apps default hostnames are assigned at deployment time and must be reconciled through `ExternalId.PublicWebBaseUrls`.
 
 Treat the resolved deployment instance as immutable after infrastructure is created. Each repository installation needs a distinct `InstanceName` within a shared Azure subscription; changing it changes resource-group and global resource identities.
 
-Deploy Web and API images with immutable commit-SHA tags through `.github/workflows/app.yml`; do not introduce mutable `latest` tags. Keep ACR credentials disabled and use App Service managed identities with `AcrPull`.
+Deploy Web and API images with immutable commit-SHA tags through `.github/workflows/app.yml`; do not introduce mutable `latest` tags. Keep ACR credentials disabled and use user-assigned Container Apps identities with `AcrPull`.
 
 Do not run EF Core migrations during API startup. Use `tools/Shopping.DatabaseMigrator` from the deployment workflow with a short-lived Azure SQL token. Production migrations and image pushes must run from the VNet-connected `shopping-prod` self-hosted runner.

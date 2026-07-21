@@ -31,14 +31,17 @@ param sqlEntraAdministratorLogin string
 @description('Deploy private endpoints and private DNS for supported PaaS resources.')
 param enablePrivateEndpoints bool
 
-@description('Allow public inbound access to the Web and API App Services.')
-param allowPublicAppAccess bool
+@description('Minimum warm replicas for each Container App.')
+param containerAppMinReplicas int
 
-@description('App Service Plan SKU name.')
-param appServicePlanSkuName string
+@description('Maximum replicas for each Container App.')
+param containerAppMaxReplicas int
 
-@description('Number of App Service Plan workers shared by the Web and API apps.')
-param appServicePlanInstanceCount int
+@description('CPU cores assigned to each Container App replica.')
+param containerAppCpu string
+
+@description('Memory assigned to each Container App replica.')
+param containerAppMemory string
 
 @description('Azure Container Registry SKU name.')
 param containerRegistrySkuName string
@@ -77,7 +80,7 @@ param entraExternalIdTenantId string
 param entraExternalIdWebClientId string
 
 @secure()
-@description('Shopping.Web app registration client secret. Stored in Key Vault and exposed to App Service as a Key Vault reference.')
+@description('Shopping.Web app registration client secret. Stored in Key Vault and exposed through a Container Apps secret reference.')
 param entraExternalIdWebClientSecret string
 
 @description('Shopping.Api app registration client ID.')
@@ -94,9 +97,11 @@ param tags object
 
 var suffix = toLower(resourceSuffix)
 var compactWorkloadName = toLower(replace(workloadName, '-', ''))
-var webAppName = 'app-${workloadName}-web-${environmentName}-${suffix}'
-var apiAppName = 'app-${workloadName}-api-${environmentName}-${suffix}'
-var appServicePlanName = 'asp-${workloadName}-${environmentName}-${suffix}'
+var webContainerAppName = 'ca-${workloadName}-web-${environmentName}-${suffix}'
+var apiContainerAppName = 'ca-${workloadName}-api-${environmentName}-${suffix}'
+var containerAppsEnvironmentName = 'cae-${workloadName}-${environmentName}-${suffix}'
+var webIdentityName = 'id-${workloadName}-web-${environmentName}-${suffix}'
+var apiIdentityName = 'id-${workloadName}-api-${environmentName}-${suffix}'
 var containerRegistryName = take('acr${compactWorkloadName}${environmentName}${suffix}', 50)
 var logAnalyticsName = 'log-${workloadName}-${environmentName}-${suffix}'
 var appInsightsName = 'appi-${workloadName}-${environmentName}-${suffix}'
@@ -111,17 +116,18 @@ var frontDoorEndpointName = 'fde-${workloadName}-images-${environmentName}-${suf
 var frontDoorOriginGroupName = 'og-product-images'
 var frontDoorOriginName = 'origin-product-images'
 var frontDoorRouteName = 'route-product-images'
+var natGatewayName = 'nat-${workloadName}-${environmentName}-${suffix}'
+var natPublicIpName = 'pip-nat-${workloadName}-${environmentName}-${suffix}'
+var containerAppsNsgName = 'nsg-container-apps-${environmentName}-${suffix}'
 var productImagesContainerName = 'product-images'
 var storageBlobEndpoint = 'https://${storageAccountName}.blob.${environment().suffixes.storage}'
 var frontDoorImageEndpoint = enableFrontDoorImageDelivery ? 'https://${frontDoorEndpoint!.properties.hostName}' : ''
 var productImagePublicBaseUri = enableFrontDoorImageDelivery ? frontDoorImageEndpoint : '${storageBlobEndpoint}/${productImagesContainerName}'
 var aspNetCoreEnvironment = environmentName == 'prod' ? 'Production' : environmentName == 'dev' ? 'Dev' : 'Test'
-var shoppingApiBaseUrl = 'https://${apiApp.properties.defaultHostName}/'
 var hasWebClientSecret = !empty(entraExternalIdWebClientSecret)
 var blobPrivateDnsZoneName = 'privatelink.blob.${environment().suffixes.storage}'
 var sqlPrivateDnsZoneName = 'privatelink.${environment().suffixes.sqlServerHostname}'
 var privateDnsZoneNames = [
-  'privatelink.azurewebsites.net'
   blobPrivateDnsZoneName
   sqlPrivateDnsZoneName
   'privatelink.vaultcore.azure.net'
@@ -129,10 +135,48 @@ var privateDnsZoneNames = [
   'privatelink.azurecr.io'
 ]
 
-var appServiceIntegrationSubnetName = 'snet-appservice-integration'
+var containerAppsInfrastructureSubnetName = 'snet-container-apps-infrastructure'
 var privateEndpointSubnetName = 'snet-private-endpoints'
 var appGatewaySubnetName = 'snet-appgateway'
 var apimSubnetName = 'snet-apim'
+
+resource containerAppsNetworkSecurityGroup 'Microsoft.Network/networkSecurityGroups@2024-05-01' = {
+  name: containerAppsNsgName
+  location: location
+  tags: tags
+  properties: {
+    securityRules: []
+  }
+}
+
+resource natPublicIp 'Microsoft.Network/publicIPAddresses@2024-05-01' = if (enablePrivateEndpoints) {
+  name: natPublicIpName
+  location: location
+  tags: tags
+  sku: {
+    name: 'Standard'
+  }
+  properties: {
+    publicIPAllocationMethod: 'Static'
+  }
+}
+
+resource outboundNatGateway 'Microsoft.Network/natGateways@2024-05-01' = if (enablePrivateEndpoints) {
+  name: natGatewayName
+  location: location
+  tags: tags
+  sku: {
+    name: 'Standard'
+  }
+  properties: {
+    idleTimeoutInMinutes: 10
+    publicIpAddresses: [
+      {
+        id: natPublicIp.id
+      }
+    ]
+  }
+}
 
 resource virtualNetwork 'Microsoft.Network/virtualNetworks@2024-05-01' = {
   name: vnetName
@@ -158,18 +202,25 @@ resource virtualNetwork 'Microsoft.Network/virtualNetworks@2024-05-01' = {
         }
       }
       {
-        name: appServiceIntegrationSubnetName
-        properties: {
+        name: containerAppsInfrastructureSubnetName
+        properties: union({
           addressPrefix: '10.40.2.0/24'
+          networkSecurityGroup: {
+            id: containerAppsNetworkSecurityGroup.id
+          }
           delegations: [
             {
-              name: 'app-service-delegation'
+              name: 'container-apps-delegation'
               properties: {
-                serviceName: 'Microsoft.Web/serverFarms'
+                serviceName: 'Microsoft.App/environments'
               }
             }
           ]
-        }
+        }, enablePrivateEndpoints ? {
+          natGateway: {
+            id: outboundNatGateway.id
+          }
+        } : {})
       }
       {
         name: privateEndpointSubnetName
@@ -182,9 +233,9 @@ resource virtualNetwork 'Microsoft.Network/virtualNetworks@2024-05-01' = {
   }
 }
 
-resource appServiceIntegrationSubnet 'Microsoft.Network/virtualNetworks/subnets@2024-05-01' existing = {
+resource containerAppsInfrastructureSubnet 'Microsoft.Network/virtualNetworks/subnets@2024-05-01' existing = {
   parent: virtualNetwork
-  name: appServiceIntegrationSubnetName
+  name: containerAppsInfrastructureSubnetName
 }
 
 resource privateEndpointSubnet 'Microsoft.Network/virtualNetworks/subnets@2024-05-01' existing = {
@@ -215,18 +266,31 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
   }
 }
 
-resource appServicePlan 'Microsoft.Web/serverfarms@2024-04-01' = {
-  name: appServicePlanName
+resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2025-01-01' = {
+  name: containerAppsEnvironmentName
   location: location
   tags: tags
-  sku: {
-    name: appServicePlanSkuName
-    capacity: appServicePlanInstanceCount
-  }
-  properties: {
-    reserved: true
+  properties: union({
+    appLogsConfiguration: {
+      destination: 'log-analytics'
+      logAnalyticsConfiguration: {
+        customerId: logAnalytics.properties.customerId
+        sharedKey: logAnalytics.listKeys().primarySharedKey
+      }
+    }
     zoneRedundant: environmentName == 'prod'
-  }
+    workloadProfiles: [
+      {
+        name: 'Consumption'
+        workloadProfileType: 'Consumption'
+      }
+    ]
+  }, enablePrivateEndpoints ? {
+    vnetConfiguration: {
+      infrastructureSubnetId: containerAppsInfrastructureSubnet.id
+      internal: false
+    }
+  } : {})
 }
 
 resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
@@ -441,166 +505,306 @@ resource redisConnectionStringSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-
   }
 }
 
-resource webApp 'Microsoft.Web/sites@2024-11-01' = {
-  name: webAppName
+resource webIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: webIdentityName
   location: location
   tags: tags
-  kind: 'app,linux,container'
-  identity: {
-    type: 'SystemAssigned'
-  }
-  properties: {
-    serverFarmId: appServicePlan.id
-    httpsOnly: true
-    publicNetworkAccess: allowPublicAppAccess ? 'Enabled' : 'Disabled'
-    virtualNetworkSubnetId: appServiceIntegrationSubnet.id
-    outboundVnetRouting: {
-      applicationTraffic: true
-      imagePullTraffic: enablePrivateEndpoints
-    }
-    siteConfig: {
-      alwaysOn: true
-      acrUseManagedIdentityCreds: true
-      ftpsState: 'Disabled'
-      healthCheckPath: '/healthz'
-      http20Enabled: true
-      linuxFxVersion: 'DOCKER|${containerRegistry.properties.loginServer}/shopping-web:${containerImageTag}'
-      minTlsVersion: '1.2'
-      appSettings: [
-        {
-          name: 'WEBSITES_PORT'
-          value: '8080'
-        }
-        {
-          name: 'ASPNETCORE_ENVIRONMENT'
-          value: aspNetCoreEnvironment
-        }
-        {
-          name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
-          value: appInsights.properties.ConnectionString
-        }
-        {
-          name: 'EntraExternalId__Instance'
-          value: entraExternalIdInstance
-        }
-        {
-          name: 'EntraExternalId__Domain'
-          value: entraExternalIdDomain
-        }
-        {
-          name: 'EntraExternalId__TenantId'
-          value: entraExternalIdTenantId
-        }
-        {
-          name: 'EntraExternalId__ClientId'
-          value: entraExternalIdWebClientId
-        }
-        {
-          name: 'EntraExternalId__ClientSecret'
-          value: hasWebClientSecret ? '@Microsoft.KeyVault(SecretUri=${webClientSecret!.properties.secretUriWithVersion})' : ''
-        }
-        {
-          name: 'ShoppingApi__BaseUrl'
-          value: shoppingApiBaseUrl
-        }
-        {
-          name: 'ShoppingApi__Scopes__0'
-          value: shoppingApiScope
-        }
-        {
-          name: 'ProductImageStorage__PublicBaseUri'
-          value: productImagePublicBaseUri
-        }
-        {
-          name: 'ShoppingAzure__Redis__ConnectionString'
-          value: '@Microsoft.KeyVault(SecretUri=${redisConnectionStringSecret.properties.secretUriWithVersion})'
-        }
-      ]
-    }
-  }
 }
 
-resource apiApp 'Microsoft.Web/sites@2024-11-01' = {
-  name: apiAppName
+resource apiIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: apiIdentityName
   location: location
   tags: tags
-  kind: 'app,linux,container'
+}
+
+var deployApplicationContainers = containerImageTag != 'bootstrap'
+var containerResources = {
+  cpu: json(containerAppCpu)
+  memory: containerAppMemory
+}
+var apiContainerImage = '${containerRegistry.properties.loginServer}/shopping-api:${containerImageTag}'
+var webContainerImage = '${containerRegistry.properties.loginServer}/shopping-web:${containerImageTag}'
+
+resource apiContainerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployApplicationContainers) {
+  name: apiContainerAppName
+  location: location
+  tags: tags
   identity: {
-    type: 'SystemAssigned'
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${apiIdentity.id}': {}
+    }
   }
   properties: {
-    serverFarmId: appServicePlan.id
-    httpsOnly: true
-    publicNetworkAccess: allowPublicAppAccess ? 'Enabled' : 'Disabled'
-    virtualNetworkSubnetId: appServiceIntegrationSubnet.id
-    outboundVnetRouting: {
-      applicationTraffic: true
-      imagePullTraffic: enablePrivateEndpoints
-    }
-    siteConfig: {
-      alwaysOn: true
-      acrUseManagedIdentityCreds: true
-      ftpsState: 'Disabled'
-      healthCheckPath: '/healthz'
-      http20Enabled: true
-      linuxFxVersion: 'DOCKER|${containerRegistry.properties.loginServer}/shopping-api:${containerImageTag}'
-      minTlsVersion: '1.2'
-      appSettings: [
+    managedEnvironmentId: containerAppsEnvironment.id
+    workloadProfileName: 'Consumption'
+    configuration: {
+      activeRevisionsMode: 'Single'
+      registries: [
         {
-          name: 'WEBSITES_PORT'
-          value: '8080'
-        }
-        {
-          name: 'ASPNETCORE_ENVIRONMENT'
-          value: aspNetCoreEnvironment
-        }
-        {
-          name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
-          value: appInsights.properties.ConnectionString
-        }
-        {
-          name: 'EntraExternalId__Instance'
-          value: entraExternalIdInstance
-        }
-        {
-          name: 'EntraExternalId__TenantId'
-          value: entraExternalIdTenantId
-        }
-        {
-          name: 'EntraExternalId__ClientId'
-          value: entraExternalIdApiClientId
-        }
-        {
-          name: 'EntraExternalId__Audience'
-          value: entraExternalIdApiAudience
-        }
-        {
-          name: 'ConnectionStrings__ShoppingDatabase'
-          value: 'Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Database=${sqlDatabase.name};Authentication=Active Directory Managed Identity;Encrypt=True;TrustServerCertificate=False;'
-        }
-        {
-          name: 'ProductImageStorage__ServiceUri'
-          value: storageBlobEndpoint
-        }
-        {
-          name: 'ProductImageStorage__ContainerName'
-          value: productImagesContainerName
-        }
-        {
-          name: 'ProductImageStorage__PublicBaseUri'
-          value: productImagePublicBaseUri
-        }
-        {
-          name: 'ProductImageStorage__UseSharedAccessSignatures'
-          value: string(enableFrontDoorImageDelivery)
-        }
-        {
-          name: 'ProductImageStorage__SharedAccessSignatureLifetimeMinutes'
-          value: string(productImageSasLifetimeMinutes)
+          server: containerRegistry.properties.loginServer
+          identity: apiIdentity.id
         }
       ]
+      ingress: {
+        external: false
+        allowInsecure: false
+        targetPort: 8080
+        transport: 'auto'
+      }
+    }
+    template: {
+      containers: [
+        {
+          name: 'shopping-api'
+          image: apiContainerImage
+          resources: containerResources
+          env: [
+            {
+              name: 'ASPNETCORE_HTTP_PORTS'
+              value: '8080'
+            }
+            {
+              name: 'ASPNETCORE_ENVIRONMENT'
+              value: aspNetCoreEnvironment
+            }
+            {
+              name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+              value: appInsights.properties.ConnectionString
+            }
+            {
+              name: 'EntraExternalId__Instance'
+              value: entraExternalIdInstance
+            }
+            {
+              name: 'EntraExternalId__TenantId'
+              value: entraExternalIdTenantId
+            }
+            {
+              name: 'EntraExternalId__ClientId'
+              value: entraExternalIdApiClientId
+            }
+            {
+              name: 'EntraExternalId__Audience'
+              value: entraExternalIdApiAudience
+            }
+            {
+              name: 'ConnectionStrings__ShoppingDatabase'
+              value: 'Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Database=${sqlDatabase.name};Authentication=Active Directory Managed Identity;User Id=${apiIdentity.properties.clientId};Encrypt=True;TrustServerCertificate=False;'
+            }
+            {
+              name: 'ProductImageStorage__ServiceUri'
+              value: storageBlobEndpoint
+            }
+            {
+              name: 'ProductImageStorage__ContainerName'
+              value: productImagesContainerName
+            }
+            {
+              name: 'ProductImageStorage__PublicBaseUri'
+              value: productImagePublicBaseUri
+            }
+            {
+              name: 'ProductImageStorage__UseSharedAccessSignatures'
+              value: string(enableFrontDoorImageDelivery)
+            }
+            {
+              name: 'ProductImageStorage__SharedAccessSignatureLifetimeMinutes'
+              value: string(productImageSasLifetimeMinutes)
+            }
+          ]
+          probes: [
+            {
+              type: 'Liveness'
+              httpGet: {
+                path: '/healthz'
+                port: 8080
+                scheme: 'HTTP'
+              }
+              initialDelaySeconds: 10
+              periodSeconds: 30
+            }
+            {
+              type: 'Readiness'
+              httpGet: {
+                path: '/healthz'
+                port: 8080
+                scheme: 'HTTP'
+              }
+              initialDelaySeconds: 5
+              periodSeconds: 10
+            }
+          ]
+        }
+      ]
+      scale: {
+        minReplicas: containerAppMinReplicas
+        maxReplicas: containerAppMaxReplicas
+        rules: [
+          {
+            name: 'http-requests'
+            http: {
+              metadata: {
+                concurrentRequests: '100'
+              }
+            }
+          }
+        ]
+      }
     }
   }
+  dependsOn: [
+    apiAcrPullAssignment
+    apiBlobContributorAssignment
+    apiBlobDelegatorAssignment
+  ]
+}
+
+resource webContainerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployApplicationContainers) {
+  name: webContainerAppName
+  location: location
+  tags: tags
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${webIdentity.id}': {}
+    }
+  }
+  properties: {
+    managedEnvironmentId: containerAppsEnvironment.id
+    workloadProfileName: 'Consumption'
+    configuration: {
+      activeRevisionsMode: 'Single'
+      registries: [
+        {
+          server: containerRegistry.properties.loginServer
+          identity: webIdentity.id
+        }
+      ]
+      secrets: concat([
+        {
+          name: 'redis-connection-string'
+          keyVaultUrl: redisConnectionStringSecret.properties.secretUri
+          identity: webIdentity.id
+        }
+      ], hasWebClientSecret ? [
+        {
+          name: 'entra-client-secret'
+          keyVaultUrl: webClientSecret!.properties.secretUri
+          identity: webIdentity.id
+        }
+      ] : [])
+      ingress: {
+        external: true
+        allowInsecure: false
+        targetPort: 8080
+        transport: 'auto'
+        stickySessions: {
+          affinity: 'sticky'
+        }
+      }
+    }
+    template: {
+      containers: [
+        {
+          name: 'shopping-web'
+          image: webContainerImage
+          resources: containerResources
+          env: concat([
+            {
+              name: 'ASPNETCORE_HTTP_PORTS'
+              value: '8080'
+            }
+            {
+              name: 'ASPNETCORE_ENVIRONMENT'
+              value: aspNetCoreEnvironment
+            }
+            {
+              name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+              value: appInsights.properties.ConnectionString
+            }
+            {
+              name: 'EntraExternalId__Instance'
+              value: entraExternalIdInstance
+            }
+            {
+              name: 'EntraExternalId__Domain'
+              value: entraExternalIdDomain
+            }
+            {
+              name: 'EntraExternalId__TenantId'
+              value: entraExternalIdTenantId
+            }
+            {
+              name: 'EntraExternalId__ClientId'
+              value: entraExternalIdWebClientId
+            }
+            {
+              name: 'ShoppingApi__BaseUrl'
+              value: 'https://${apiContainerApp!.properties.configuration.ingress.fqdn}/'
+            }
+            {
+              name: 'ShoppingApi__Scopes__0'
+              value: shoppingApiScope
+            }
+            {
+              name: 'ProductImageStorage__PublicBaseUri'
+              value: productImagePublicBaseUri
+            }
+            {
+              name: 'ShoppingAzure__Redis__ConnectionString'
+              secretRef: 'redis-connection-string'
+            }
+          ], hasWebClientSecret ? [
+            {
+              name: 'EntraExternalId__ClientSecret'
+              secretRef: 'entra-client-secret'
+            }
+          ] : [])
+          probes: [
+            {
+              type: 'Liveness'
+              httpGet: {
+                path: '/healthz'
+                port: 8080
+                scheme: 'HTTP'
+              }
+              initialDelaySeconds: 10
+              periodSeconds: 30
+            }
+            {
+              type: 'Readiness'
+              httpGet: {
+                path: '/healthz'
+                port: 8080
+                scheme: 'HTTP'
+              }
+              initialDelaySeconds: 5
+              periodSeconds: 10
+            }
+          ]
+        }
+      ]
+      scale: {
+        minReplicas: containerAppMinReplicas
+        maxReplicas: containerAppMaxReplicas
+        rules: [
+          {
+            name: 'http-requests'
+            http: {
+              metadata: {
+                concurrentRequests: '100'
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+  dependsOn: [
+    webAcrPullAssignment
+    webKeyVaultSecretsUserAssignment
+  ]
 }
 
 resource blobDataContributorRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' existing = {
@@ -629,20 +833,20 @@ resource deploymentAcrPushAssignment 'Microsoft.Authorization/roleAssignments@20
 }
 
 resource webAcrPullAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(containerRegistry.id, webApp.id, acrPullRole.id)
+  name: guid(containerRegistry.id, webIdentity.id, acrPullRole.id)
   scope: containerRegistry
   properties: {
-    principalId: webApp.identity.principalId
+    principalId: webIdentity.properties.principalId
     principalType: 'ServicePrincipal'
     roleDefinitionId: acrPullRole.id
   }
 }
 
 resource apiAcrPullAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(containerRegistry.id, apiApp.id, acrPullRole.id)
+  name: guid(containerRegistry.id, apiIdentity.id, acrPullRole.id)
   scope: containerRegistry
   properties: {
-    principalId: apiApp.identity.principalId
+    principalId: apiIdentity.properties.principalId
     principalType: 'ServicePrincipal'
     roleDefinitionId: acrPullRole.id
   }
@@ -654,20 +858,20 @@ resource blobDelegatorRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' 
 }
 
 resource apiBlobContributorAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storageAccount.id, apiApp.id, blobDataContributorRole.id)
+  name: guid(storageAccount.id, apiIdentity.id, blobDataContributorRole.id)
   scope: storageAccount
   properties: {
-    principalId: apiApp.identity.principalId
+    principalId: apiIdentity.properties.principalId
     principalType: 'ServicePrincipal'
     roleDefinitionId: blobDataContributorRole.id
   }
 }
 
 resource apiBlobDelegatorAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storageAccount.id, apiApp.id, blobDelegatorRole.id)
+  name: guid(storageAccount.id, apiIdentity.id, blobDelegatorRole.id)
   scope: storageAccount
   properties: {
-    principalId: apiApp.identity.principalId
+    principalId: apiIdentity.properties.principalId
     principalType: 'ServicePrincipal'
     roleDefinitionId: blobDelegatorRole.id
   }
@@ -679,10 +883,10 @@ resource keyVaultSecretsUserRole 'Microsoft.Authorization/roleDefinitions@2022-0
 }
 
 resource webKeyVaultSecretsUserAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(keyVault.id, webApp.id, keyVaultSecretsUserRole.id)
+  name: guid(keyVault.id, webIdentity.id, keyVaultSecretsUserRole.id)
   scope: keyVault
   properties: {
-    principalId: webApp.identity.principalId
+    principalId: webIdentity.properties.principalId
     principalType: 'ServicePrincipal'
     roleDefinitionId: keyVaultSecretsUserRole.id
   }
@@ -705,50 +909,6 @@ resource privateDnsZoneLinks 'Microsoft.Network/privateDnsZones/virtualNetworkLi
     }
   }
 }]
-
-resource webPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = if (enablePrivateEndpoints) {
-  name: 'pe-${webApp.name}'
-  location: location
-  tags: tags
-  properties: {
-    subnet: {
-      id: privateEndpointSubnet.id
-    }
-    privateLinkServiceConnections: [
-      {
-        name: 'web'
-        properties: {
-          privateLinkServiceId: webApp.id
-          groupIds: [
-            'sites'
-          ]
-        }
-      }
-    ]
-  }
-}
-
-resource apiPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = if (enablePrivateEndpoints) {
-  name: 'pe-${apiApp.name}'
-  location: location
-  tags: tags
-  properties: {
-    subnet: {
-      id: privateEndpointSubnet.id
-    }
-    privateLinkServiceConnections: [
-      {
-        name: 'api'
-        properties: {
-          privateLinkServiceId: apiApp.id
-          groupIds: [
-            'sites'
-          ]
-        }
-      }
-    ]
-  }
-}
 
 resource storagePrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = if (enablePrivateEndpoints) {
   name: 'pe-${storageAccount.name}-blob'
@@ -860,36 +1020,6 @@ resource containerRegistryPrivateEndpoint 'Microsoft.Network/privateEndpoints@20
   }
 }
 
-resource webPrivateDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-05-01' = if (enablePrivateEndpoints) {
-  parent: webPrivateEndpoint
-  name: 'default'
-  properties: {
-    privateDnsZoneConfigs: [
-      {
-        name: 'websites'
-        properties: {
-          privateDnsZoneId: privateDnsZones[0].id
-        }
-      }
-    ]
-  }
-}
-
-resource apiPrivateDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-05-01' = if (enablePrivateEndpoints) {
-  parent: apiPrivateEndpoint
-  name: 'default'
-  properties: {
-    privateDnsZoneConfigs: [
-      {
-        name: 'websites'
-        properties: {
-          privateDnsZoneId: privateDnsZones[0].id
-        }
-      }
-    ]
-  }
-}
-
 resource storagePrivateDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-05-01' = if (enablePrivateEndpoints) {
   parent: storagePrivateEndpoint
   name: 'default'
@@ -898,7 +1028,7 @@ resource storagePrivateDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateD
       {
         name: 'blob'
         properties: {
-          privateDnsZoneId: privateDnsZones[1].id
+          privateDnsZoneId: privateDnsZones[0].id
         }
       }
     ]
@@ -913,7 +1043,7 @@ resource sqlPrivateDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZo
       {
         name: 'sql'
         properties: {
-          privateDnsZoneId: privateDnsZones[2].id
+          privateDnsZoneId: privateDnsZones[1].id
         }
       }
     ]
@@ -928,7 +1058,7 @@ resource keyVaultPrivateDnsZoneGroup 'Microsoft.Network/privateEndpoints/private
       {
         name: 'vault'
         properties: {
-          privateDnsZoneId: privateDnsZones[3].id
+          privateDnsZoneId: privateDnsZones[2].id
         }
       }
     ]
@@ -943,7 +1073,7 @@ resource redisPrivateDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDns
       {
         name: 'redis'
         properties: {
-          privateDnsZoneId: privateDnsZones[4].id
+          privateDnsZoneId: privateDnsZones[3].id
         }
       }
     ]
@@ -958,18 +1088,19 @@ resource containerRegistryPrivateDnsZoneGroup 'Microsoft.Network/privateEndpoint
       {
         name: 'registry'
         properties: {
-          privateDnsZoneId: privateDnsZones[5].id
+          privateDnsZoneId: privateDnsZones[4].id
         }
       }
     ]
   }
 }
 
-output webAppName string = webApp.name
-output webAppDefaultHostName string = webApp.properties.defaultHostName
-output webRedirectUri string = 'https://${webApp.properties.defaultHostName}/signin-oidc'
-output apiAppName string = apiApp.name
-output apiAppPrincipalId string = apiApp.identity.principalId
+output webContainerAppName string = webContainerAppName
+output webContainerAppFqdn string = deployApplicationContainers ? webContainerApp!.properties.configuration.ingress.fqdn : ''
+output webRedirectUri string = deployApplicationContainers ? 'https://${webContainerApp!.properties.configuration.ingress.fqdn}/signin-oidc' : ''
+output apiContainerAppName string = apiContainerAppName
+output apiIdentityName string = apiIdentity.name
+output apiIdentityPrincipalId string = apiIdentity.properties.principalId
 output containerRegistryName string = containerRegistry.name
 output containerRegistryLoginServer string = containerRegistry.properties.loginServer
 output keyVaultName string = keyVault.name

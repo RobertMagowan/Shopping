@@ -52,7 +52,7 @@ The operator requires:
 - GitHub repository administrator permission.
 - Permission to create Entra applications and service principals.
 - Permission to assign the configured Azure roles at subscription scope.
-- App Service worker quota for each selected region and SKU. Each environment requests two workers; quota must cover all environments that will run concurrently.
+- Sufficient Azure Container Apps Consumption quota for the selected regions. Defaults vary by subscription and should be reviewed before deployment.
 - Permission to grant tenant-wide consent when `-GrantAdminConsent` is used.
 - Permission to assign the initial Admin app roles when `BootstrapAdminUserObjectId` is configured.
 
@@ -90,11 +90,11 @@ Copy-Item .\scripts\bootstrap.config.example.psd1 `
           .\scripts\bootstrap.config.psd1
 ```
 
-Replace every placeholder. The file is ignored by Git and contains no secrets. `ExternalId.WebRedirectUris` contains local or other fixed callbacks. Bootstrap deterministically generates a resource suffix for each environment and adds the future `azurewebsites.net/signin-oidc` callback before deployment. The same suffix is stored in the matching GitHub environment and supplied to Bicep as `RESOURCE_SUFFIX`, so Entra and Azure use the same hostname on the first deployment. Bicep also retains this suffix in globally named resources such as ACR, Storage, and Key Vault to keep installations and environments distinct.
+Replace every placeholder. The file is ignored by Git and contains no secrets. `ExternalId.WebRedirectUris` contains local or other fixed callbacks. Bootstrap generates a deterministic resource suffix for globally named resources such as ACR, Storage, and Key Vault, then stores the same value in each GitHub environment for Bicep.
 
-`InstanceName` identifies one installation. Leave it empty to derive a stable Azure-safe value from the canonical GitHub owner/repository, or set a deliberate value such as `client-a` or `interview-demo`. The resolved value is included in resource groups, tags, app-registration names, generated suffixes, GitHub environment variables, and redirect URLs. Treat one GitHub repository as one installation; use a separate repository and state file for a parallel installation because its `dev`, `test`, and `prod` GitHub environments hold installation-specific values.
+`InstanceName` identifies one installation. Leave it empty to derive a stable Azure-safe value from the canonical GitHub owner/repository, or set a deliberate value such as `client-a` or `interview-demo`. The resolved value is included in resource groups, tags, app-registration names, generated suffixes, and GitHub environment variables. Treat one GitHub repository as one installation; use a separate repository and state file for a parallel installation because its `dev`, `test`, and `prod` GitHub environments hold installation-specific values.
 
-Set `ExternalId.PublicWebBaseUrls.<environment>` when users enter through a custom domain, Application Gateway, or another public ingress. Supply the HTTPS origin only, such as `https://shop.example.co.uk`; bootstrap adds `/signin-oidc`. A private production App Service requires this override once its public ingress is defined.
+Container Apps assigns its default domain during deployment. For a first deployment without a custom domain, leave `ExternalId.PublicWebBaseUrls.<environment>` empty, deploy infrastructure and application images, copy the Web origin reported by the `app` workflow, set the value, and rerun the External ID stage. When a custom domain is known in advance, supply its HTTPS origin, such as `https://shop.example.co.uk`; bootstrap adds `/signin-oidc`.
 
 The scripts write generated object IDs to:
 
@@ -265,11 +265,9 @@ In the Entra admin center:
 3. Configure email, Microsoft, Google, or other required identity providers.
 4. Confirm the bootstrap Admin user can sign in.
 
-When a custom domain or public gateway origin changes, update `ExternalId.PublicWebBaseUrls` and rerun `-Stage ExternalId`. Do not add the callback only in the portal because the script intentionally replaces the complete redirect URI list.
+After the first application deployment, copy each reported Container Apps Web origin into `ExternalId.PublicWebBaseUrls`, then rerun `-Stage ExternalId`. Repeat this when a custom domain or public gateway origin changes. Do not add callbacks only in the portal because the script intentionally replaces the complete redirect URI list.
 
-The current production Bicep parameters make the App Services private, while the Application Gateway module is still pending. The generated direct App Service callback is deterministic but is not a public production entry point. Configure and deploy the public ingress, set `ExternalId.PublicWebBaseUrls.prod`, and rerun the External ID stage before testing production sign-in.
-
-Production image deployment also requires a VNet-connected Linux self-hosted GitHub runner labelled `self-hosted`, `linux`, and `shopping-prod`. The runner needs Docker plus private access to ACR, Azure SQL, and App Service. Hosted runners are used for dev and test, with temporary SQL firewall rules removed after migration.
+Production image deployment requires a VNet-connected Linux self-hosted GitHub runner labelled `self-hosted`, `linux`, and `shopping-prod`. The runner needs Docker plus private access to ACR and Azure SQL. Hosted runners are used for dev and test, with temporary SQL firewall rules removed after migration.
 
 ## 10. Verify
 
