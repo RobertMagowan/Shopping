@@ -105,9 +105,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Test modular Bicep structure
+      - name: Test infrastructure definitions
         shell: pwsh
-        run: ./infra/tests/Test-BicepModules.ps1
+        run: |
+          Get-ChildItem ./infra/tests/Test-*.ps1 | ForEach-Object {
+            & $_.FullName
+            if (-not $?) { exit 1 }
+          }
 
       - name: Build Bicep
         run: az bicep build --file "$TEMPLATE_FILE"

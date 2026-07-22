@@ -281,7 +281,7 @@ Self-service sign-up creates a customer account but does not automatically assig
 
 After the first application deployment, copy each reported Container Apps Web origin into `ExternalId.PublicWebBaseUrls`, then rerun `-Stage ExternalId`. Repeat this when a custom domain or public gateway origin changes. Do not add callbacks only in the portal because the script intentionally replaces the complete redirect URI list.
 
-Production image deployment requires a VNet-connected Linux self-hosted GitHub runner labelled `self-hosted`, `linux`, and `shopping-prod`. The runner needs Docker plus private access to ACR and Azure SQL. Hosted runners are used for dev and test, with temporary SQL firewall rules removed after migration.
+Application deployments use GitHub-hosted Linux runners. For production, the workflow temporarily allowlists only the current runner IP on ACR and Azure SQL, then restores private-only access in `always()` cleanup steps before deploying the runtime revision. No persistent self-hosted runner is required.
 
 ## 10. Verify
 

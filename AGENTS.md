@@ -170,4 +170,4 @@ Treat the resolved deployment instance as immutable after infrastructure is crea
 
 Deploy Web and API images with immutable commit-SHA tags through `.github/workflows/app.yml`; do not introduce mutable `latest` tags. Keep ACR credentials disabled and use user-assigned Container Apps identities with `AcrPull`.
 
-Do not run EF Core migrations during API startup. Use `tools/Shopping.DatabaseMigrator` from the deployment workflow with a short-lived Azure SQL token. Production migrations and image pushes must run from the VNet-connected `shopping-prod` self-hosted runner.
+Do not run EF Core migrations during API startup. Use `tools/Shopping.DatabaseMigrator` from the deployment workflow with a short-lived Azure SQL token. Production migrations and image pushes use a GitHub-hosted runner with temporary `/32` ACR and SQL allowlisting; cleanup must restore private-only access before the runtime deployment proceeds.

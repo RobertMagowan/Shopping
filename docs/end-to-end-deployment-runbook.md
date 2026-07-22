@@ -488,7 +488,7 @@ The app workflow:
 4. Opens a temporary SQL firewall rule for the hosted runner.
 5. Obtains a short-lived Azure SQL token.
 6. Runs `Shopping.DatabaseMigrator`.
-7. Creates the API managed-identity database user and grants runtime roles.
+7. Creates or reconciles the API managed-identity database user from its client ID and grants runtime roles.
 8. Removes the temporary firewall rule even when migration fails.
 9. Deploys the image SHA through Bicep.
 10. Verifies a healthy API revision and public Web `/healthz`.
@@ -591,14 +591,12 @@ gh workflow run app.yml --ref master -f environmentName=prod -f migrateDatabase=
 
 Production additionally requires:
 
-- a VNet-connected Linux runner labelled `self-hosted`, `linux`, and `shopping-prod`;
-- private DNS/network access to ACR and Azure SQL;
 - review of `what-if` before approval;
 - approval of any pending Front Door private-link request;
 - production callback/custom-domain reconciliation;
 - two starting Web/API replicas and production private endpoints.
 
-Never re-enable public production PaaS access merely to use a GitHub-hosted runner.
+The production application job uses a GitHub-hosted runner. It temporarily adds that runner's `/32` IP rule and enables public access for ACR and Azure SQL only while pushing images and applying migrations. `always()` cleanup disables public access before removing the temporary rules, and the final Bicep reconciliation enforces the private-only desired state again. Treat a cleanup failure as a failed deployment and verify both resources before retrying.
 
 ## 19. Roll Back
 
