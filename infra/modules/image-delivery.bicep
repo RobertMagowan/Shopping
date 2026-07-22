@@ -13,7 +13,7 @@ param storageBlobEndpoint string
 param productImagesContainerName string
 param tags object
 
-resource frontDoorProfile 'Microsoft.Cdn/profiles@2024-05-01' = if (enableFrontDoorImageDelivery) {
+resource frontDoorProfile 'Microsoft.Cdn/profiles@2025-06-01' = if (enableFrontDoorImageDelivery) {
   name: frontDoorProfileName
   location: 'global'
   tags: tags
@@ -22,7 +22,7 @@ resource frontDoorProfile 'Microsoft.Cdn/profiles@2024-05-01' = if (enableFrontD
   }
 }
 
-resource frontDoorEndpoint 'Microsoft.Cdn/profiles/afdEndpoints@2024-05-01' = if (enableFrontDoorImageDelivery) {
+resource frontDoorEndpoint 'Microsoft.Cdn/profiles/afdEndpoints@2025-06-01' = if (enableFrontDoorImageDelivery) {
   parent: frontDoorProfile
   name: frontDoorEndpointName
   location: 'global'
@@ -32,7 +32,7 @@ resource frontDoorEndpoint 'Microsoft.Cdn/profiles/afdEndpoints@2024-05-01' = if
   }
 }
 
-resource frontDoorOriginGroup 'Microsoft.Cdn/profiles/originGroups@2024-05-01' = if (enableFrontDoorImageDelivery) {
+resource frontDoorOriginGroup 'Microsoft.Cdn/profiles/originGroups@2025-06-01' = if (enableFrontDoorImageDelivery) {
   parent: frontDoorProfile
   name: frontDoorOriginGroupName
   properties: {
@@ -50,7 +50,7 @@ resource frontDoorOriginGroup 'Microsoft.Cdn/profiles/originGroups@2024-05-01' =
   }
 }
 
-resource frontDoorOrigin 'Microsoft.Cdn/profiles/originGroups/origins@2024-05-01' = if (enableFrontDoorImageDelivery) {
+resource frontDoorOrigin 'Microsoft.Cdn/profiles/originGroups/origins@2025-06-01' = if (enableFrontDoorImageDelivery) {
   parent: frontDoorOriginGroup
   name: frontDoorOriginName
   properties: {
@@ -62,13 +62,19 @@ resource frontDoorOrigin 'Microsoft.Cdn/profiles/originGroups/origins@2024-05-01
     weight: 1000
     enabledState: 'Enabled'
     enforceCertificateNameCheck: true
-    privateLinkResourceId: storageAccountId
-    privateLinkLocation: location
-    privateLinkSubResourceType: 'blob'
+    sharedPrivateLinkResource: {
+      privateLink: {
+        id: storageAccountId
+      }
+      privateLinkLocation: location
+      groupId: 'blob'
+      requestMessage: 'Allow Front Door to read Shopping product images.'
+      status: 'Pending'
+    }
   }
 }
 
-resource frontDoorRoute 'Microsoft.Cdn/profiles/afdEndpoints/routes@2024-05-01' = if (enableFrontDoorImageDelivery) {
+resource frontDoorRoute 'Microsoft.Cdn/profiles/afdEndpoints/routes@2025-06-01' = if (enableFrontDoorImageDelivery) {
   parent: frontDoorEndpoint
   name: frontDoorRouteName
   dependsOn: [
