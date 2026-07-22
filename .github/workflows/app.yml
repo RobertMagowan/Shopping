@@ -83,6 +83,8 @@ jobs:
       AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       SQL_ADMINISTRATOR_LOGIN: ${{ vars.SQL_ADMINISTRATOR_LOGIN }}
       SQL_ADMINISTRATOR_PASSWORD: ${{ secrets.SQL_ADMINISTRATOR_PASSWORD }}
+      SQL_ZONE_REDUNDANT: ${{ vars.SQL_ZONE_REDUNDANT }}
+      MANAGED_REDIS_LOCATION: ${{ vars.MANAGED_REDIS_LOCATION }}
       ENTRA_EXTERNAL_ID_INSTANCE: ${{ vars.ENTRA_EXTERNAL_ID_INSTANCE }}
       ENTRA_EXTERNAL_ID_DOMAIN: ${{ vars.ENTRA_EXTERNAL_ID_DOMAIN }}
       ENTRA_EXTERNAL_ID_TENANT_ID: ${{ vars.ENTRA_EXTERNAL_ID_TENANT_ID }}
@@ -112,6 +114,8 @@ jobs:
             RESOURCE_SUFFIX
             SQL_ADMINISTRATOR_LOGIN
             SQL_ADMINISTRATOR_PASSWORD
+            SQL_ZONE_REDUNDANT
+            MANAGED_REDIS_LOCATION
             ENTRA_EXTERNAL_ID_INSTANCE
             ENTRA_EXTERNAL_ID_DOMAIN
             ENTRA_EXTERNAL_ID_TENANT_ID
@@ -206,7 +210,7 @@ jobs:
           if [ -n "${RUNNER_IP:-}" ]; then
             az acr network-rule remove \
               --name "$CONTAINER_REGISTRY_NAME" \
-              --ip-address "${RUNNER_IP}/32" || cleanup_failed=true
+              --ip-address "${RUNNER_IP}" || cleanup_failed=true
           fi
 
           if [ "$cleanup_failed" = true ]; then
