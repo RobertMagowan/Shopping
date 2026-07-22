@@ -27,6 +27,7 @@ function Get-WorkflowStep {
 }
 
 $migrationStep = Get-WorkflowStep -Name 'Apply database migrations and runtime permissions'
+$configurationStep = Get-WorkflowStep -Name 'Ensure deployment configuration is present'
 $openRegistryStep = Get-WorkflowStep -Name 'Open temporary production registry access'
 $closeRegistryStep = Get-WorkflowStep -Name 'Close temporary production registry access'
 $openSqlStep = Get-WorkflowStep -Name 'Open temporary SQL firewall rule'
@@ -42,9 +43,17 @@ if ($workflow -match 'shopping-prod' -or
     throw 'Production deployment must not depend on an externally managed self-hosted runner.'
 }
 
+if ($workflow -notmatch '(?m)^\s+SQL_ZONE_REDUNDANT:\s+\$\{\{ vars\.SQL_ZONE_REDUNDANT \}\}' -or
+    $workflow -notmatch '(?m)^\s+MANAGED_REDIS_LOCATION:\s+\$\{\{ vars\.MANAGED_REDIS_LOCATION \}\}' -or
+    $configurationStep -notmatch '(?m)^\s+SQL_ZONE_REDUNDANT\s*$' -or
+    $configurationStep -notmatch '(?m)^\s+MANAGED_REDIS_LOCATION\s*$') {
+    throw 'Application deployment must use the same environment-specific SQL and Redis settings as infrastructure deployment.'
+}
+
 if ($openRegistryStep -notmatch '(?s)az acr network-rule add.*--ip-address.*az acr update.*--public-network-enabled true' -or
     $closeRegistryStep -notmatch 'always\(\)' -or
-    $closeRegistryStep -notmatch '(?s)az acr update.*--public-network-enabled false.*az acr network-rule remove') {
+    $closeRegistryStep -notmatch '(?s)az acr update.*--public-network-enabled false.*az acr network-rule remove' -or
+    $closeRegistryStep -notmatch '--ip-address "\$\{RUNNER_IP\}"') {
     throw 'Production image deployment must temporarily allowlist the hosted runner and always restore private ACR access.'
 }
 
