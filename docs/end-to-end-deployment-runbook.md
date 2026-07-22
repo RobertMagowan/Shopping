@@ -488,7 +488,7 @@ The app workflow:
 4. Opens a temporary SQL firewall rule for the hosted runner.
 5. Obtains a short-lived Azure SQL token.
 6. Runs `Shopping.DatabaseMigrator`.
-7. Creates the API managed-identity database user and grants runtime roles.
+7. Creates or reconciles the API managed-identity database user from its client ID and grants runtime roles.
 8. Removes the temporary firewall rule even when migration fails.
 9. Deploys the image SHA through Bicep.
 10. Verifies a healthy API revision and public Web `/healthz`.

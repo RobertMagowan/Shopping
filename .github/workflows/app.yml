@@ -208,10 +208,10 @@ jobs:
         if: ${{ needs.deployment-target.outputs.migrateDatabase == 'true' }}
         shell: bash
         run: |
-          api_principal_id=$(az identity show \
+          api_client_id=$(az identity show \
             --resource-group "$RESOURCE_GROUP" \
             --name "$API_IDENTITY_NAME" \
-            --query principalId \
+            --query clientId \
             --output tsv)
           sql_server_fqdn=$(az sql server show \
             --resource-group "$RESOURCE_GROUP" \
@@ -227,7 +227,7 @@ jobs:
 
           ConnectionStrings__ShoppingDatabase="$connection_string" \
           AZURE_SQL_ACCESS_TOKEN="$sql_access_token" \
-          SHOPPING_API_PRINCIPAL_ID="$api_principal_id" \
+          SHOPPING_API_CLIENT_ID="$api_client_id" \
           SHOPPING_API_PRINCIPAL_NAME="$API_IDENTITY_NAME" \
           dotnet run \
             --project tools/Shopping.DatabaseMigrator/Shopping.DatabaseMigrator.csproj \

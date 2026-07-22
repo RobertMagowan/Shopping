@@ -4,7 +4,7 @@ using Shopping.Infrastructure.Persistence;
 
 var connectionString = GetRequiredEnvironmentVariable("ConnectionStrings__ShoppingDatabase");
 var accessToken = GetRequiredEnvironmentVariable("AZURE_SQL_ACCESS_TOKEN");
-var apiPrincipalId = Guid.Parse(GetRequiredEnvironmentVariable("SHOPPING_API_PRINCIPAL_ID"));
+var apiClientId = Guid.Parse(GetRequiredEnvironmentVariable("SHOPPING_API_CLIENT_ID"));
 var apiPrincipalName = GetRequiredEnvironmentVariable("SHOPPING_API_PRINCIPAL_NAME");
 
 await using var connection = new SqlConnection(connectionString)
@@ -19,17 +19,33 @@ await using var dbContext = new ShoppingDbContext(options);
 await dbContext.Database.MigrateAsync();
 
 var escapedPrincipalName = apiPrincipalName.Replace("]", "]]", StringComparison.Ordinal);
-var principalSid = Convert.ToHexString(apiPrincipalId.ToByteArray());
+var principalNameLiteral = apiPrincipalName.Replace("'", "''", StringComparison.Ordinal);
+var principalSid = Convert.ToHexString(apiClientId.ToByteArray());
 var principalSql = $"""
-    IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE sid = 0x{principalSid})
+    IF EXISTS (
+        SELECT 1
+        FROM sys.database_principals
+        WHERE name = N'{principalNameLiteral}'
+          AND sid <> 0x{principalSid}
+    )
+    BEGIN
+        DROP USER [{escapedPrincipalName}];
+    END;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM sys.database_principals
+        WHERE name = N'{principalNameLiteral}'
+          AND sid = 0x{principalSid}
+    )
     BEGIN
         CREATE USER [{escapedPrincipalName}] WITH SID = 0x{principalSid}, TYPE = E;
     END;
 
-    IF IS_ROLEMEMBER('db_datareader', '{apiPrincipalName.Replace("'", "''", StringComparison.Ordinal)}') <> 1
+    IF IS_ROLEMEMBER('db_datareader', '{principalNameLiteral}') <> 1
         ALTER ROLE db_datareader ADD MEMBER [{escapedPrincipalName}];
 
-    IF IS_ROLEMEMBER('db_datawriter', '{apiPrincipalName.Replace("'", "''", StringComparison.Ordinal)}') <> 1
+    IF IS_ROLEMEMBER('db_datawriter', '{principalNameLiteral}') <> 1
         ALTER ROLE db_datawriter ADD MEMBER [{escapedPrincipalName}];
     """;
 

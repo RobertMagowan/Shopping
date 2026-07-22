@@ -94,6 +94,8 @@ The initial infrastructure deployment creates ACR, user-assigned identities, RBA
 
 Azure Managed Redis uses encrypted client traffic on port `10000`. Dev and test permit public network access for the managed Container Apps environment; production disables public access and resolves the cache through `privatelink.redis.azure.net`.
 
+Dev and test also expose Azure SQL through its public endpoint. The SQL module creates the Azure-services firewall rule (`0.0.0.0`) only while private endpoints are disabled; database access still requires Microsoft Entra authentication and the API managed identity's contained database user. Production disables SQL public access and uses Private Link.
+
 `prod` uses private PaaS endpoints, custom-VNet injection, explicit NAT egress, and a scalable replica range:
 
 ```text
@@ -137,7 +139,7 @@ The `app` workflow:
 - builds Web and API images tagged with the source commit SHA,
 - pushes images to ACR using GitHub OIDC and Azure RBAC,
 - obtains a short-lived Azure SQL access token,
-- applies EF Core migrations and grants the API managed identity `db_datareader` and `db_datawriter`,
+- applies EF Core migrations and grants the API managed identity `db_datareader` and `db_datawriter` using its client ID as the Azure SQL service-principal SID,
 - updates both Container Apps through Bicep, verifies the API revision is healthy, and calls the public Web `/healthz` endpoint.
 
 ## First Deployment

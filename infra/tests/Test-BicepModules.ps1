@@ -47,4 +47,10 @@ if ($sqlModule -notmatch "azureADOnlyAuthentication:\s*environmentName != 'dev'"
     throw 'sql.bicep must enable Entra-only authentication outside dev.'
 }
 
+$publicSqlFirewallRulePattern = "(?s)resource\s+allowAzureServices\s+'Microsoft.Sql/servers/firewallRules@[^']+'\s*=\s*if\s*\(!enablePrivateEndpoints\).*startIpAddress:\s*'0\.0\.0\.0'.*endIpAddress:\s*'0\.0\.0\.0'"
+
+if ($sqlModule -notmatch $publicSqlFirewallRulePattern) {
+    throw 'sql.bicep must allow Azure-hosted callers when SQL private endpoints are disabled.'
+}
+
 Write-Host 'Bicep module structure is valid.'

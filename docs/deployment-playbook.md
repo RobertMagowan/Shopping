@@ -99,7 +99,7 @@ Infrastructure and application deployments require separate production approvals
 
 ## Database Migrations
 
-The application workflow obtains a short-lived Azure SQL token and runs `Shopping.DatabaseMigrator`. It applies EF Core migrations, creates the API managed-identity database user, and grants runtime read/write roles.
+The application workflow obtains a short-lived Azure SQL token and runs `Shopping.DatabaseMigrator`. It applies EF Core migrations, creates the API managed-identity database user from the identity client ID, and grants runtime read/write roles. The migrator replaces a same-name database principal when recreation of the managed identity changes that client ID.
 
 - Do not run migrations during API startup.
 - Keep schema changes compatible with the currently deployed application during rollout.
