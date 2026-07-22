@@ -272,14 +272,31 @@ $runGitHub = $Stage -in @("All", "GitHub")
 $webClientSecret = $null
 $authoritativeWebRedirectUris = @($config.ExternalId.WebRedirectUris)
 $environmentVariablesByEnvironment = @{}
+$azureLocation = [string](Get-ObjectPropertyValue `
+    -InputObject $config.Azure `
+    -Name "Location")
+
+if ([string]::IsNullOrWhiteSpace($azureLocation)) {
+    $azureLocation = "uksouth"
+}
 
 foreach ($environmentName in $config.Environments) {
+    $managedRedisLocation = Get-EnvironmentManagedRedisLocation `
+        -AzureConfiguration $config.Azure `
+        -EnvironmentName $environmentName `
+        -DefaultLocation $azureLocation
+    $sqlZoneRedundant = Get-EnvironmentSqlZoneRedundant `
+        -AzureConfiguration $config.Azure `
+        -EnvironmentName $environmentName
+
     $environmentVariablesByEnvironment[$environmentName] = @{
         RESOURCE_SUFFIX = Get-EnvironmentResourceSuffix `
             -SubscriptionId $config.Azure.SubscriptionId `
             -WorkloadName $config.WorkloadName `
             -InstanceName $deploymentInstance `
             -EnvironmentName $environmentName
+        MANAGED_REDIS_LOCATION = $managedRedisLocation
+        SQL_ZONE_REDUNDANT = $sqlZoneRedundant.ToString().ToLowerInvariant()
     }
 }
 

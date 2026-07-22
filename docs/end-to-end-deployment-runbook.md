@@ -193,6 +193,17 @@ Populate:
     Azure = @{
         TenantId = "<azure-resource-tenant-id>"
         SubscriptionId = "<azure-subscription-id>"
+        Location = "uksouth"
+        ManagedRedisLocations = @{
+            dev = "uksouth"
+            test = "uksouth"
+            prod = "uksouth"
+        }
+        SqlZoneRedundancy = @{
+            dev = $false
+            test = $false
+            prod = $true
+        }
         DeploymentRoles = @(
             "Contributor"
             "Role Based Access Control Administrator"
@@ -229,6 +240,8 @@ Populate:
 `scripts/bootstrap.config.psd1` and `scripts/bootstrap-state.local.json` are ignored. Neither may contain secrets. State stores the normalized bootstrap-admin email, generated application/object IDs, and credential expiry metadata only.
 
 Leave deployed Web base URLs empty initially. Container Apps assigns the default Web FQDN when the application images are first deployed.
+
+Keep Managed Redis in the application region unless repeated clean deployments fail because that region has no available cache capacity. A cache can be placed in another UK region while its private endpoint remains in the application VNet; record that exception in `Azure.ManagedRedisLocations`. Keep production SQL zone redundancy enabled when Azure accepts it. If Azure repeatedly returns `ProvisioningDisabled` for the selected subscription, region, and SKU, set only that environment's `Azure.SqlZoneRedundancy` value to `$false` and record the reduced zonal-failure resilience.
 
 ## 8. Preview Bootstrap
 
@@ -647,10 +660,11 @@ Rebuild by running the `infra` deploy followed by `app` deployment from the same
 | Production environment protection differs | Reviewer or exact branch policy was not reconciled | Reapply GitHub bootstrap using the configured reviewer and branch; verify production allows only the exact default branch. |
 | Container Apps quota error | Subscription has no regional consumption-core quota | Request only the required UK South quota, or select a supported region deliberately and update every environment input consistently. |
 | Managed Redis remains provisioning for a long time | Managed service creation commonly takes tens of minutes | Inspect the resource state and deployment operation. Wait while Azure reports progress; do not dispatch overlapping deployments. |
-| Managed Redis fails with generic `OperationFailed` | Azure service-side provisioning failure | Inspect resource/deployment operations, delete only the failed Redis resource if it is not usable, and perform one clean retry. Escalate repeated failures with correlation details. |
+| Managed Redis fails with generic `OperationFailed` | Azure service-side provisioning failure or exhausted regional capacity | Inspect resource/deployment operations, delete only the failed Redis resource if it is not usable, and perform one clean retry. After a repeated clean failure, select another approved UK region through `Azure.ManagedRedisLocations`, rerun the GitHub bootstrap stage, and redeploy. |
 | Key Vault deployment rejects purge protection | Template explicitly sent `enablePurgeProtection: false` | Production sets it to `true`; dev/test omit the property. Do not send `false`. |
 | Key Vault name exists in deleted state | Deterministic name has a soft-deleted vault | Let `infra.yml` recover the expected vault before ARM validation. Dev/test teardown may purge it; production purge-protected vaults must be recovered. |
-| SQL migration cannot connect | Wrong firewall/network path, token, server, or database | Confirm the workflow created its temporary hosted-runner rule, acquired a SQL token in the resource tenant, and removed the rule afterward. Production requires the private runner. |
+| SQL creation reports `ProvisioningDisabled` for zone redundancy | The subscription, region, or SKU is not accepting a zonal database request | Confirm the selected SKU capability and retry once. If the clean retry fails identically, set that environment's `Azure.SqlZoneRedundancy` to `$false`, rerun the GitHub bootstrap stage, and document the reduced zonal resilience. |
+| SQL migration cannot connect | Wrong firewall/network path, token, server, or database | Confirm the workflow created its temporary hosted-runner rule, acquired a SQL token in the resource tenant, and removed the rule afterward. |
 | API cannot query SQL at runtime | API managed-identity database user/grants are missing | Rerun `app.yml` with `migrateDatabase=true` and inspect DatabaseMigrator output. Do not add SQL credentials to the API. |
 | `/health` returns 404 | Wrong endpoint | Use `/healthz` for both Web and API probes. |
 | App workflow fails because ACR is absent | Application deployment ran before infrastructure | Complete `infra` successfully before running `app`. |

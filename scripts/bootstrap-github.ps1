@@ -322,7 +322,6 @@ function Set-BranchRuleset {
 }
 
 Assert-Command -Name "gh"
-Invoke-Gh -Arguments @("auth", "status")
 $canonicalRepository = Get-CanonicalGitHubRepository -Repository $Repository
 $managedRulesetName = if ([string]::IsNullOrWhiteSpace($RulesetName)) { "protected $Branch" } else { $RulesetName }
 

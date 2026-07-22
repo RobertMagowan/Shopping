@@ -88,8 +88,14 @@ param containerImageTag string = 'bootstrap'
 @description('Azure SQL database SKU name.')
 param sqlDatabaseSkuName string = environmentName == 'prod' ? 'GP_Gen5_2' : 'Basic'
 
+@description('Enable Azure SQL availability-zone redundancy when the selected subscription, region, and SKU support it.')
+param sqlZoneRedundant bool = environmentName == 'prod'
+
 @description('Azure Managed Redis SKU name.')
 param managedRedisSkuName string = 'Balanced_B0'
+
+@description('Azure region for Managed Redis. This can differ from the application region when regional cache capacity is constrained.')
+param managedRedisLocation string = location
 
 @description('Deploy Azure Front Door Premium for cached product image delivery through a private Blob origin.')
 param enableFrontDoorImageDelivery bool = environmentName == 'prod'
@@ -158,7 +164,9 @@ module environmentResources 'modules/environment.bicep' = {
     containerRegistrySkuName: containerRegistrySkuName
     containerImageTag: containerImageTag
     sqlDatabaseSkuName: sqlDatabaseSkuName
+    sqlZoneRedundant: sqlZoneRedundant
     managedRedisSkuName: managedRedisSkuName
+    managedRedisLocation: managedRedisLocation
     enableFrontDoorImageDelivery: enableFrontDoorImageDelivery
     productImageSasLifetimeMinutes: productImageSasLifetimeMinutes
     entraExternalIdInstance: entraExternalIdInstance

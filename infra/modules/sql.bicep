@@ -6,6 +6,7 @@ param enablePrivateEndpoints bool
 param sqlServerName string
 param sqlDatabaseName string
 param sqlDatabaseSkuName string
+param sqlZoneRedundant bool
 param sqlAdministratorLogin string
 
 @secure()
@@ -46,7 +47,7 @@ resource sqlDatabase 'Microsoft.Sql/servers/databases@2023-08-01-preview' = {
     name: sqlDatabaseSkuName
   }
   properties: {
-    zoneRedundant: environmentName == 'prod'
+    zoneRedundant: sqlZoneRedundant
   }
 }
 

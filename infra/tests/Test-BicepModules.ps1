@@ -47,6 +47,58 @@ if ($sqlModule -notmatch "azureADOnlyAuthentication:\s*environmentName != 'dev'"
     throw 'sql.bicep must enable Entra-only authentication outside dev.'
 }
 
+if ($sqlModule -notmatch 'param\s+sqlZoneRedundant\s+bool' -or
+    $sqlModule -notmatch 'zoneRedundant:\s*sqlZoneRedundant' -or
+    $sqlModule -match "zoneRedundant:\s*environmentName == 'prod'") {
+    throw 'sql.bicep must use the explicit SQL zone-redundancy capability parameter.'
+}
+
+$redisModulePath = Join-Path $infraRoot 'modules/redis.bicep'
+$redisModule = Get-Content -LiteralPath $redisModulePath -Raw
+
+if ($orchestrator -notmatch 'param\s+managedRedisLocation\s+string' -or
+    $orchestrator -notmatch 'param\s+sqlZoneRedundant\s+bool' -or
+    $orchestrator -notmatch 'location:\s*managedRedisLocation' -or
+    $orchestrator -notmatch 'sqlZoneRedundant:\s*sqlZoneRedundant') {
+    throw 'environment.bicep must pass explicit Redis location and SQL zone-redundancy capabilities.'
+}
+
+if ($redisModule -notmatch 'param\s+location\s+string') {
+    throw 'redis.bicep must accept its deployment location from the environment orchestrator.'
+}
+
+$devParameters = Get-Content -LiteralPath (Join-Path $infraRoot 'parameters/dev.bicepparam') -Raw
+$testParameters = Get-Content -LiteralPath (Join-Path $infraRoot 'parameters/test.bicepparam') -Raw
+$prodParameters = Get-Content -LiteralPath (Join-Path $infraRoot 'parameters/prod.bicepparam') -Raw
+
+if ($prodParameters -notmatch "readEnvironmentVariable\('MANAGED_REDIS_LOCATION',\s*'uksouth'\)" -or
+    $prodParameters -notmatch "readEnvironmentVariable\('SQL_ZONE_REDUNDANT',\s*'true'\)") {
+    throw 'Production parameters must expose subscription-specific Redis location and SQL zone-redundancy controls.'
+}
+
+foreach ($nonProductionParameters in @($devParameters, $testParameters)) {
+    if ($nonProductionParameters -notmatch "readEnvironmentVariable\('SQL_ZONE_REDUNDANT',\s*'false'\)") {
+        throw 'Every environment must consume the SQL_ZONE_REDUNDANT workflow contract.'
+    }
+}
+
+$redisModuleCall = [regex]::Match(
+    $orchestrator,
+    "(?ms)^module\s+redis\s+'redis\.bicep'.*?(?=^module\s|^output\s|\z)"
+)
+$privateEndpointsModuleCall = [regex]::Match(
+    $orchestrator,
+    "(?ms)^module\s+privateEndpoints\s+'private-endpoints\.bicep'.*?(?=^module\s|^output\s|\z)"
+)
+
+if (-not $redisModuleCall.Success -or
+    $redisModuleCall.Value -notmatch 'location:\s*managedRedisLocation' -or
+    -not $privateEndpointsModuleCall.Success -or
+    $privateEndpointsModuleCall.Value -notmatch 'location:\s*location' -or
+    $privateEndpointsModuleCall.Value -match 'location:\s*managedRedisLocation') {
+    throw 'Managed Redis may use a separate region, but private endpoints must remain in the application region.'
+}
+
 $publicSqlFirewallRuleMatch = [regex]::Match(
     $sqlModule,
     "(?ms)^resource\s+allowAzureServices\s+'Microsoft.Sql/servers/firewallRules@[^']+'\s*=\s*if\s*\(!enablePrivateEndpoints\).*?(?=^resource\s|^output\s|\z)"
