@@ -65,4 +65,28 @@ if ($publicSqlFirewallRule -notmatch 'parent:\s*sqlServer' -or
     throw 'The public SQL firewall resource must target sqlServer and use the Azure-services 0.0.0.0 rule.'
 }
 
+$imageDeliveryModulePath = Join-Path $infraRoot 'modules/image-delivery.bicep'
+$imageDeliveryModule = Get-Content -LiteralPath $imageDeliveryModulePath -Raw
+$cdnResourceMatches = [regex]::Matches(
+    $imageDeliveryModule,
+    "'Microsoft\.Cdn/[^']+@(?<apiVersion>[^']+)'"
+)
+
+if ($cdnResourceMatches.Count -ne 5 -or
+    @($cdnResourceMatches | Where-Object { $_.Groups['apiVersion'].Value -ne '2025-06-01' }).Count -gt 0) {
+    throw 'Front Door resources must use the supported stable Microsoft.Cdn API version 2025-06-01.'
+}
+
+$frontDoorOriginMatch = [regex]::Match(
+    $imageDeliveryModule,
+    "(?ms)^resource\s+frontDoorOrigin\s+'Microsoft\.Cdn/profiles/originGroups/origins@2025-06-01'.*?(?=^resource\s|^output\s|\z)"
+)
+
+if (-not $frontDoorOriginMatch.Success -or
+    $frontDoorOriginMatch.Value -notmatch 'sharedPrivateLinkResource:\s*\{' -or
+    $frontDoorOriginMatch.Value -notmatch 'groupId:\s*\x27blob\x27' -or
+    $frontDoorOriginMatch.Value -match 'privateLinkResourceId|privateLinkSubResourceType') {
+    throw 'The Front Door origin must use the supported sharedPrivateLinkResource shape for its private Blob origin.'
+}
+
 Write-Host 'Bicep module structure is valid.'
