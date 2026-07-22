@@ -341,6 +341,7 @@ function Get-GitHubOidcAudience {
 
 function Get-RequiredAzureResourceProviders {
     return @(
+        "Microsoft.AlertsManagement",
         "Microsoft.Authorization",
         "Microsoft.App",
         "Microsoft.Cache",

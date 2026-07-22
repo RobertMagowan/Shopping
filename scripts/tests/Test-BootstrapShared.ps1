@@ -55,4 +55,12 @@ if ((Get-ObjectPropertyValue -InputObject $objectValue -Name "DisplayName") -ne 
     throw "Expected new object property creation to remain supported."
 }
 
+$requiredProviders = @(Get-RequiredAzureResourceProviders)
+
+foreach ($providerNamespace in @("Microsoft.AlertsManagement", "Microsoft.Insights")) {
+    if ($requiredProviders -notcontains $providerNamespace) {
+        throw "Expected required Azure resource provider '$providerNamespace'."
+    }
+}
+
 Write-Host "Bootstrap shared helper tests passed."
