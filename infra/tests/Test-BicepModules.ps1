@@ -47,10 +47,22 @@ if ($sqlModule -notmatch "azureADOnlyAuthentication:\s*environmentName != 'dev'"
     throw 'sql.bicep must enable Entra-only authentication outside dev.'
 }
 
-$publicSqlFirewallRulePattern = "(?s)resource\s+allowAzureServices\s+'Microsoft.Sql/servers/firewallRules@[^']+'\s*=\s*if\s*\(!enablePrivateEndpoints\).*startIpAddress:\s*'0\.0\.0\.0'.*endIpAddress:\s*'0\.0\.0\.0'"
+$publicSqlFirewallRuleMatch = [regex]::Match(
+    $sqlModule,
+    "(?ms)^resource\s+allowAzureServices\s+'Microsoft.Sql/servers/firewallRules@[^']+'\s*=\s*if\s*\(!enablePrivateEndpoints\).*?(?=^resource\s|^output\s|\z)"
+)
 
-if ($sqlModule -notmatch $publicSqlFirewallRulePattern) {
+if (-not $publicSqlFirewallRuleMatch.Success) {
     throw 'sql.bicep must allow Azure-hosted callers when SQL private endpoints are disabled.'
+}
+
+$publicSqlFirewallRule = $publicSqlFirewallRuleMatch.Value
+
+if ($publicSqlFirewallRule -notmatch 'parent:\s*sqlServer' -or
+    $publicSqlFirewallRule -notmatch "name:\s*'AllowAllWindowsAzureIps'" -or
+    $publicSqlFirewallRule -notmatch "startIpAddress:\s*'0\.0\.0\.0'" -or
+    $publicSqlFirewallRule -notmatch "endIpAddress:\s*'0\.0\.0\.0'") {
+    throw 'The public SQL firewall resource must target sqlServer and use the Azure-services 0.0.0.0 rule.'
 }
 
 Write-Host 'Bicep module structure is valid.'
