@@ -468,6 +468,57 @@ function Get-AuthoritativeWebRedirectUris {
     return @($ConfiguredRedirectUris + $deployedRedirectUris | Sort-Object -Unique)
 }
 
+function Get-EnvironmentManagedRedisLocation {
+    param(
+        [object]$AzureConfiguration,
+        [string]$EnvironmentName,
+        [string]$DefaultLocation
+    )
+
+    $locations = Get-ObjectPropertyValue `
+        -InputObject $AzureConfiguration `
+        -Name "ManagedRedisLocations"
+    $configuredLocation = [string](Get-ObjectPropertyValue `
+        -InputObject $locations `
+        -Name $EnvironmentName)
+
+    if ([string]::IsNullOrWhiteSpace($configuredLocation)) {
+        return $DefaultLocation
+    }
+
+    return $configuredLocation.Trim().ToLowerInvariant()
+}
+
+function Get-EnvironmentSqlZoneRedundant {
+    param(
+        [object]$AzureConfiguration,
+        [string]$EnvironmentName
+    )
+
+    $settings = Get-ObjectPropertyValue `
+        -InputObject $AzureConfiguration `
+        -Name "SqlZoneRedundancy"
+    $configuredValue = Get-ObjectPropertyValue `
+        -InputObject $settings `
+        -Name $EnvironmentName
+
+    if ($null -eq $configuredValue) {
+        return $EnvironmentName -eq "prod"
+    }
+
+    if ($configuredValue -is [bool]) {
+        return $configuredValue
+    }
+
+    $parsedValue = $false
+
+    if ([bool]::TryParse([string]$configuredValue, [ref]$parsedValue)) {
+        return $parsedValue
+    }
+
+    throw "Azure.SqlZoneRedundancy.$EnvironmentName must be true or false."
+}
+
 function Read-BootstrapState {
     param([string]$Path)
 

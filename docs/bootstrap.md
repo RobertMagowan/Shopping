@@ -249,6 +249,7 @@ Secrets are piped directly to `gh secret set`. They are not included in command-
 GitHub receives:
 
 - Environment variables for Azure OIDC, the deployment principal object ID, External ID, `WORKLOAD_NAME`, `DEPLOYMENT_INSTANCE`, and the environment-specific `RESOURCE_SUFFIX`.
+- Environment capability variables for `MANAGED_REDIS_LOCATION` and `SQL_ZONE_REDUNDANT`, derived from `Azure.ManagedRedisLocations` and `Azure.SqlZoneRedundancy` in the bootstrap configuration.
 - Environment secrets for SQL provisioning and the Web client credential.
 - No deployment approval for dev or test.
 - Required reviewer approval for production.

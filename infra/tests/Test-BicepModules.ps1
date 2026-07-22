@@ -47,6 +47,33 @@ if ($sqlModule -notmatch "azureADOnlyAuthentication:\s*environmentName != 'dev'"
     throw 'sql.bicep must enable Entra-only authentication outside dev.'
 }
 
+if ($sqlModule -notmatch 'param\s+sqlZoneRedundant\s+bool' -or
+    $sqlModule -notmatch 'zoneRedundant:\s*sqlZoneRedundant' -or
+    $sqlModule -match "zoneRedundant:\s*environmentName == 'prod'") {
+    throw 'sql.bicep must use the explicit SQL zone-redundancy capability parameter.'
+}
+
+$redisModulePath = Join-Path $infraRoot 'modules/redis.bicep'
+$redisModule = Get-Content -LiteralPath $redisModulePath -Raw
+
+if ($orchestrator -notmatch 'param\s+managedRedisLocation\s+string' -or
+    $orchestrator -notmatch 'param\s+sqlZoneRedundant\s+bool' -or
+    $orchestrator -notmatch 'location:\s*managedRedisLocation' -or
+    $orchestrator -notmatch 'sqlZoneRedundant:\s*sqlZoneRedundant') {
+    throw 'environment.bicep must pass explicit Redis location and SQL zone-redundancy capabilities.'
+}
+
+if ($redisModule -notmatch 'param\s+location\s+string') {
+    throw 'redis.bicep must accept its deployment location from the environment orchestrator.'
+}
+
+$prodParameters = Get-Content -LiteralPath (Join-Path $infraRoot 'parameters/prod.bicepparam') -Raw
+
+if ($prodParameters -notmatch "readEnvironmentVariable\('MANAGED_REDIS_LOCATION',\s*'uksouth'\)" -or
+    $prodParameters -notmatch "readEnvironmentVariable\('SQL_ZONE_REDUNDANT',\s*'true'\)") {
+    throw 'Production parameters must expose subscription-specific Redis location and SQL zone-redundancy controls.'
+}
+
 $publicSqlFirewallRuleMatch = [regex]::Match(
     $sqlModule,
     "(?ms)^resource\s+allowAzureServices\s+'Microsoft.Sql/servers/firewallRules@[^']+'\s*=\s*if\s*\(!enablePrivateEndpoints\).*?(?=^resource\s|^output\s|\z)"

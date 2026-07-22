@@ -318,6 +318,8 @@ $requiredVariables = @(
     "DEPLOYMENT_INSTANCE",
     "RESOURCE_SUFFIX",
     "SQL_ADMINISTRATOR_LOGIN",
+    "SQL_ZONE_REDUNDANT",
+    "MANAGED_REDIS_LOCATION",
     "ENTRA_EXTERNAL_ID_INSTANCE",
     "ENTRA_EXTERNAL_ID_DOMAIN",
     "ENTRA_EXTERNAL_ID_TENANT_ID",
@@ -330,6 +332,21 @@ $requiredSecrets = @("SQL_ADMINISTRATOR_PASSWORD", "ENTRA_EXTERNAL_ID_WEB_CLIENT
 
 foreach ($environmentName in $config.Environments) {
     try {
+        $azureLocation = [string](Get-ObjectPropertyValue `
+            -InputObject $config.Azure `
+            -Name "Location")
+
+        if ([string]::IsNullOrWhiteSpace($azureLocation)) {
+            $azureLocation = "uksouth"
+        }
+
+        $expectedManagedRedisLocation = Get-EnvironmentManagedRedisLocation `
+            -AzureConfiguration $config.Azure `
+            -EnvironmentName $environmentName `
+            -DefaultLocation $azureLocation
+        $expectedSqlZoneRedundant = (Get-EnvironmentSqlZoneRedundant `
+            -AzureConfiguration $config.Azure `
+            -EnvironmentName $environmentName).ToString().ToLowerInvariant()
         $environment = & gh api "repos/$canonicalRepository/environments/$environmentName" | ConvertFrom-Json
         $environmentVariables = @((& gh api "repos/$canonicalRepository/environments/$environmentName/variables?per_page=100" | ConvertFrom-Json).variables)
         $variables = $environmentVariables.name
@@ -350,11 +367,19 @@ foreach ($environmentName in $config.Environments) {
         $instanceVariable = @($environmentVariables | Where-Object name -eq "DEPLOYMENT_INSTANCE")
         $instanceCorrect = $instanceVariable.Count -eq 1 -and
                            $instanceVariable[0].value -ceq $deploymentInstance
+        $managedRedisLocationVariable = @($environmentVariables | Where-Object name -eq "MANAGED_REDIS_LOCATION")
+        $managedRedisLocationCorrect = $managedRedisLocationVariable.Count -eq 1 -and
+                                       $managedRedisLocationVariable[0].value -ceq $expectedManagedRedisLocation
+        $sqlZoneRedundantVariable = @($environmentVariables | Where-Object name -eq "SQL_ZONE_REDUNDANT")
+        $sqlZoneRedundantCorrect = $sqlZoneRedundantVariable.Count -eq 1 -and
+                                   $sqlZoneRedundantVariable[0].value -ceq $expectedSqlZoneRedundant
         $valuesPresent = $missingVariables.Count -eq 0 -and
                          $missingSecrets.Count -eq 0 -and
                          $resourceSuffixCorrect -and
                          $workloadCorrect -and
-                         $instanceCorrect
+                         $instanceCorrect -and
+                         $managedRedisLocationCorrect -and
+                         $sqlZoneRedundantCorrect
         $protectionCorrect = if ($environmentName -eq "prod") {
             $deploymentBranchPolicy = Get-ObjectPropertyValue -InputObject $environment -Name "deployment_branch_policy"
             $customBranchPolicies = Get-ObjectPropertyValue -InputObject $deploymentBranchPolicy -Name "custom_branch_policies"
@@ -386,6 +411,8 @@ foreach ($environmentName in $config.Environments) {
             if (-not $resourceSuffixCorrect) { $differences += "RESOURCE_SUFFIX differs from '$expectedResourceSuffix'" }
             if (-not $workloadCorrect) { $differences += "WORKLOAD_NAME differs from '$($config.WorkloadName)'" }
             if (-not $instanceCorrect) { $differences += "DEPLOYMENT_INSTANCE differs from '$deploymentInstance'" }
+            if (-not $managedRedisLocationCorrect) { $differences += "MANAGED_REDIS_LOCATION differs from '$expectedManagedRedisLocation'" }
+            if (-not $sqlZoneRedundantCorrect) { $differences += "SQL_ZONE_REDUNDANT differs from '$expectedSqlZoneRedundant'" }
             if (-not $protectionCorrect) { $differences += "deployment protection" }
             Add-VerificationResult -Area "GitHub/$environmentName" -Status "Fail" -Detail ($differences -join '; ')
         }

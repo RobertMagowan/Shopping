@@ -63,4 +63,41 @@ foreach ($providerNamespace in @("Microsoft.AlertsManagement", "Microsoft.Insigh
     }
 }
 
+$defaultAzureConfiguration = @{}
+
+if ((Get-EnvironmentManagedRedisLocation `
+        -AzureConfiguration $defaultAzureConfiguration `
+        -EnvironmentName "prod" `
+        -DefaultLocation "uksouth") -ne "uksouth") {
+    throw "Expected Managed Redis to use the application region by default."
+}
+
+if (-not (Get-EnvironmentSqlZoneRedundant `
+        -AzureConfiguration $defaultAzureConfiguration `
+        -EnvironmentName "prod")) {
+    throw "Expected production SQL zone redundancy to default to enabled."
+}
+
+$overriddenAzureConfiguration = @{
+    ManagedRedisLocations = @{
+        prod = "ukwest"
+    }
+    SqlZoneRedundancy = @{
+        prod = $false
+    }
+}
+
+if ((Get-EnvironmentManagedRedisLocation `
+        -AzureConfiguration $overriddenAzureConfiguration `
+        -EnvironmentName "prod" `
+        -DefaultLocation "uksouth") -ne "ukwest") {
+    throw "Expected the production Managed Redis location override."
+}
+
+if (Get-EnvironmentSqlZoneRedundant `
+        -AzureConfiguration $overriddenAzureConfiguration `
+        -EnvironmentName "prod") {
+    throw "Expected the production SQL zone-redundancy override."
+}
+
 Write-Host "Bootstrap shared helper tests passed."

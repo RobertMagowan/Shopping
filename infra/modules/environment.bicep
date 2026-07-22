@@ -52,8 +52,14 @@ param containerImageTag string
 @description('Azure SQL database SKU name.')
 param sqlDatabaseSkuName string
 
+@description('Enable Azure SQL availability-zone redundancy.')
+param sqlZoneRedundant bool
+
 @description('Azure Managed Redis SKU name.')
 param managedRedisSkuName string
+
+@description('Azure region for Managed Redis.')
+param managedRedisLocation string
 
 @description('Deploy Azure Front Door Premium for cached product image delivery through a private Blob origin.')
 param enableFrontDoorImageDelivery bool
@@ -209,6 +215,7 @@ module sql 'sql.bicep' = {
     sqlServerName: sqlServerName
     sqlDatabaseName: sqlDatabaseName
     sqlDatabaseSkuName: sqlDatabaseSkuName
+    sqlZoneRedundant: sqlZoneRedundant
     sqlAdministratorLogin: sqlAdministratorLogin
     sqlAdministratorPassword: sqlAdministratorPassword
     deploymentPrincipalObjectId: deploymentPrincipalObjectId
@@ -220,7 +227,7 @@ module sql 'sql.bicep' = {
 module redis 'redis.bicep' = {
   params: {
     environmentName: environmentName
-    location: location
+    location: managedRedisLocation
     enablePrivateEndpoints: enablePrivateEndpoints
     redisName: redisName
     managedRedisSkuName: managedRedisSkuName

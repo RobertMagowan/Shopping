@@ -10,6 +10,19 @@
     Azure = @{
         TenantId = "<azure-resource-tenant-id>"
         SubscriptionId = "<azure-subscription-id>"
+        Location = "uksouth"
+        # Keep Redis with the application unless Azure reports regional capacity constraints.
+        ManagedRedisLocations = @{
+            dev = "uksouth"
+            test = "uksouth"
+            prod = "uksouth"
+        }
+        # Enable production zone redundancy when the subscription, region, and SQL SKU accept it.
+        SqlZoneRedundancy = @{
+            dev = $false
+            test = $false
+            prod = $true
+        }
         DeploymentRoles = @(
             "Contributor"
             "Role Based Access Control Administrator"

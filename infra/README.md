@@ -94,6 +94,8 @@ The initial infrastructure deployment creates ACR, user-assigned identities, RBA
 
 Azure Managed Redis uses encrypted client traffic on port `10000`. Dev and test permit public network access for the managed Container Apps environment; production disables public access and resolves the cache through `privatelink.redis.azure.net`.
 
+`MANAGED_REDIS_LOCATION` can place the managed cache in another UK region when the application region has insufficient cache capacity; the production private endpoint remains in the application VNet. `SQL_ZONE_REDUNDANT` must match the selected subscription, region, and SQL SKU capability. Keep it enabled for production where supported; disabling it retains Azure SQL's built-in local availability but removes availability-zone outage protection.
+
 Dev and test also expose Azure SQL through its public endpoint. The SQL module creates the Azure-services firewall rule (`0.0.0.0`) only while private endpoints are disabled; database access still requires Microsoft Entra authentication and the API managed identity's contained database user. Production disables SQL public access and uses Private Link.
 
 `prod` uses private PaaS endpoints, custom-VNet injection, explicit NAT egress, and a scalable replica range:
