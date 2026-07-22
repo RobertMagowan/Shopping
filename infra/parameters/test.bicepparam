@@ -16,7 +16,7 @@ param containerAppMemory = '1Gi'
 param containerRegistrySkuName = 'Basic'
 param containerImageTag = readEnvironmentVariable('CONTAINER_IMAGE_TAG', 'bootstrap')
 param sqlDatabaseSkuName = 'Basic'
-param sqlZoneRedundant = false
+param sqlZoneRedundant = readEnvironmentVariable('SQL_ZONE_REDUNDANT', 'false') == 'true'
 param managedRedisSkuName = 'Balanced_B0'
 param managedRedisLocation = readEnvironmentVariable('MANAGED_REDIS_LOCATION', 'uksouth')
 param enableFrontDoorImageDelivery = false
