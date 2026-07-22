@@ -48,9 +48,9 @@ if ($openRegistryStep -notmatch '(?s)az acr network-rule add.*--ip-address.*az a
     throw 'Production image deployment must temporarily allowlist the hosted runner and always restore private ACR access.'
 }
 
-if ($openSqlStep -notmatch '(?s)az sql server firewall-rule create.*az sql server update.*--enable-public-network true' -or
+if ($openSqlStep -notmatch '(?s)az sql server update.*--enable-public-network true.*az sql server firewall-rule create' -or
     $closeSqlStep -notmatch 'always\(\)' -or
-    $closeSqlStep -notmatch '(?s)az sql server update.*--enable-public-network false.*az sql server firewall-rule delete') {
+    $closeSqlStep -notmatch '(?s)az sql server firewall-rule delete.*az sql server update.*--enable-public-network false') {
     throw 'Production migration must temporarily allowlist the hosted runner and always restore private SQL access.'
 }
 
