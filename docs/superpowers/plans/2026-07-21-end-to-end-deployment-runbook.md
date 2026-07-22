@@ -51,7 +51,7 @@ Explain infrastructure/application workflow separation, `bootstrap` image behavi
 
 - [ ] **Step 7: Document feature-to-production delivery**
 
-Cover feature branch, pull request, required checks, review resolution, merge to `master`, automatic dev deployment, manual test promotion, production approval, self-hosted runner requirements, rollback, and teardown.
+Cover feature branch, pull request, required checks, review resolution, merge to `master`, automatic dev deployment, manual test promotion, production approval, temporary hosted-runner network access, rollback, and teardown.
 
 ### Task 2: Synchronize Focused Guides
 

@@ -36,7 +36,6 @@ jobs:
     outputs:
       environmentName: ${{ steps.target.outputs.environmentName }}
       migrateDatabase: ${{ steps.target.outputs.migrateDatabase }}
-      runner: ${{ steps.target.outputs.runner }}
       sourceSha: ${{ steps.target.outputs.sourceSha }}
     steps:
       - name: Resolve deployment target
@@ -53,23 +52,16 @@ jobs:
             migrate_database="${{ inputs.migrateDatabase }}"
           fi
 
-          if [ "$environment_name" = "prod" ]; then
-            runner='["self-hosted","linux","shopping-prod"]'
-          else
-            runner='"ubuntu-latest"'
-          fi
-
           {
             echo "environmentName=$environment_name"
             echo "migrateDatabase=$migrate_database"
-            echo "runner=$runner"
             echo "sourceSha=$source_sha"
           } >> "$GITHUB_OUTPUT"
 
   deploy:
     name: app-deploy-${{ needs.deployment-target.outputs.environmentName }}
     needs: deployment-target
-    runs-on: ${{ fromJSON(needs.deployment-target.outputs.runner) }}
+    runs-on: ubuntu-latest
     environment: ${{ needs.deployment-target.outputs.environmentName }}
     concurrency:
       group: app-deploy-${{ needs.deployment-target.outputs.environmentName }}
@@ -170,6 +162,23 @@ jobs:
             echo "SQL_DATABASE_NAME=sqldb-${WORKLOAD_NAME}-${ENVIRONMENT_NAME}"
           } >> "$GITHUB_ENV"
 
+      - name: Open temporary production registry access
+        if: ${{ needs.deployment-target.outputs.environmentName == 'prod' }}
+        shell: bash
+        run: |
+          runner_ip=$(curl --fail --silent --show-error https://api.ipify.org)
+          echo "RUNNER_IP=$runner_ip" >> "$GITHUB_ENV"
+
+          az acr update \
+            --name "$CONTAINER_REGISTRY_NAME" \
+            --default-action Deny
+          az acr network-rule add \
+            --name "$CONTAINER_REGISTRY_NAME" \
+            --ip-address "${runner_ip}/32"
+          az acr update \
+            --name "$CONTAINER_REGISTRY_NAME" \
+            --public-network-enabled true
+
       - name: Sign in to container registry
         run: az acr login --name "$CONTAINER_REGISTRY_NAME"
 
@@ -184,6 +193,27 @@ jobs:
           docker push "$web_image"
           docker push "$api_image"
 
+      - name: Close temporary production registry access
+        if: ${{ always() && needs.deployment-target.outputs.environmentName == 'prod' }}
+        shell: bash
+        run: |
+          cleanup_failed=false
+
+          az acr update \
+            --name "$CONTAINER_REGISTRY_NAME" \
+            --public-network-enabled false || cleanup_failed=true
+
+          if [ -n "${RUNNER_IP:-}" ]; then
+            az acr network-rule remove \
+              --name "$CONTAINER_REGISTRY_NAME" \
+              --ip-address "${RUNNER_IP}/32" || cleanup_failed=true
+          fi
+
+          if [ "$cleanup_failed" = true ]; then
+            echo "Failed to restore private-only access on the production registry."
+            exit 1
+          fi
+
       - name: Set up .NET
         if: ${{ needs.deployment-target.outputs.migrateDatabase == 'true' }}
         uses: actions/setup-dotnet@v6
@@ -191,18 +221,31 @@ jobs:
           dotnet-version: 10.0.x
 
       - name: Open temporary SQL firewall rule
-        if: ${{ needs.deployment-target.outputs.migrateDatabase == 'true' && needs.deployment-target.outputs.environmentName != 'prod' }}
+        if: ${{ needs.deployment-target.outputs.migrateDatabase == 'true' }}
         shell: bash
         run: |
-          runner_ip=$(curl --fail --silent --show-error https://api.ipify.org)
+          runner_ip="${RUNNER_IP:-}"
+          if [ -z "$runner_ip" ]; then
+            runner_ip=$(curl --fail --silent --show-error https://api.ipify.org)
+            echo "RUNNER_IP=$runner_ip" >> "$GITHUB_ENV"
+          fi
+
           firewall_rule="github-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "SQL_FIREWALL_RULE=$firewall_rule" >> "$GITHUB_ENV"
+
           az sql server firewall-rule create \
             --resource-group "$RESOURCE_GROUP" \
             --server "$SQL_SERVER_NAME" \
             --name "$firewall_rule" \
             --start-ip-address "$runner_ip" \
             --end-ip-address "$runner_ip"
-          echo "SQL_FIREWALL_RULE=$firewall_rule" >> "$GITHUB_ENV"
+
+          if [ "$ENVIRONMENT_NAME" = "prod" ]; then
+            az sql server update \
+              --resource-group "$RESOURCE_GROUP" \
+              --name "$SQL_SERVER_NAME" \
+              --enable-public-network true
+          fi
 
       - name: Apply database migrations and runtime permissions
         if: ${{ needs.deployment-target.outputs.migrateDatabase == 'true' }}
@@ -234,14 +277,28 @@ jobs:
             --configuration Release
 
       - name: Remove temporary SQL firewall rule
-        if: ${{ always() && needs.deployment-target.outputs.migrateDatabase == 'true' && needs.deployment-target.outputs.environmentName != 'prod' }}
+        if: ${{ always() && needs.deployment-target.outputs.migrateDatabase == 'true' }}
         shell: bash
         run: |
+          cleanup_failed=false
+
+          if [ "$ENVIRONMENT_NAME" = "prod" ]; then
+            az sql server update \
+              --resource-group "$RESOURCE_GROUP" \
+              --name "$SQL_SERVER_NAME" \
+              --enable-public-network false || cleanup_failed=true
+          fi
+
           if [ -n "${SQL_FIREWALL_RULE:-}" ]; then
             az sql server firewall-rule delete \
               --resource-group "$RESOURCE_GROUP" \
               --server "$SQL_SERVER_NAME" \
-              --name "$SQL_FIREWALL_RULE"
+              --name "$SQL_FIREWALL_RULE" || cleanup_failed=true
+          fi
+
+          if [ "$cleanup_failed" = true ]; then
+            echo "Failed to restore the expected SQL network boundary."
+            exit 1
           fi
 
       - name: Deploy immutable image tag

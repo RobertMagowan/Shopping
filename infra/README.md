@@ -105,7 +105,7 @@ containerAppMaxReplicas: 10
 enableFrontDoorImageDelivery: true
 ```
 
-Production application deployment requires a Linux self-hosted GitHub runner carrying the labels `self-hosted`, `linux`, and `shopping-prod`. It must have Docker, outbound GitHub access, and private DNS/network access to ACR and Azure SQL. Do not re-enable public PaaS access merely to use a hosted runner.
+Production application deployment uses a GitHub-hosted Linux runner. The workflow temporarily allowlists that runner's `/32` address on ACR and Azure SQL, performs the image push and migration, and restores private-only access in unconditional cleanup steps. The final Bicep deployment also enforces disabled public access.
 
 `Shopping.Web` is the only public application endpoint. It calls `Shopping.Api` through internal Container Apps service discovery, and the API still validates the delegated Entra access token. The runtime images enable ASP.NET Core forwarded headers so HTTPS redirection observes the original scheme after Container Apps TLS termination.
 

@@ -11,7 +11,6 @@ Before deploying:
 - Azure Container Apps Consumption quota is available in the target region.
 - The customer user flow and identity providers have been verified manually.
 - The pull request has all required status checks.
-- Production has a VNet-connected Linux runner labelled `self-hosted`, `linux`, and `shopping-prod`.
 - Production public ingress, DNS, certificate, and External ID callback configuration are complete before customer testing.
 
 ## Pipeline Map
@@ -88,10 +87,10 @@ Test has no deployment approval. Manual infrastructure runs do not automatically
 Production deployments must run from `master` and require approval.
 
 1. Ensure the tested release commit is the current `master` commit.
-2. Confirm the production runner is online and has private DNS and network access to ACR and Azure SQL.
-3. Run `infra` manually for `prod`, review `what-if`, and approve the GitHub Environment deployment.
-4. Complete any pending Front Door private-link approval.
-5. Run `app` manually for `prod` with database migration enabled and approve the deployment.
+2. Run `infra` manually for `prod`, review `what-if`, and approve the GitHub Environment deployment.
+3. Complete any pending Front Door private-link approval.
+4. Run `app` manually for `prod` with database migration enabled and approve the deployment.
+5. Confirm the application job restored `publicNetworkAccess=Disabled` on ACR and Azure SQL after its temporary runner-IP allowlist.
 6. On the first deployment, reconcile the reported Web origin through `ExternalId.PublicWebBaseUrls.prod` and the External ID bootstrap stage.
 7. Verify health, authentication, authorization, catalog data, and image delivery through the public origin.
 

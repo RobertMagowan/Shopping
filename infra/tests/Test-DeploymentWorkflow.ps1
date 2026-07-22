@@ -12,6 +12,27 @@ if ($workflow -notmatch '--query clientId' -or
     throw 'The app workflow must provision the SQL user from the API managed identity client ID.'
 }
 
+if ($workflow -match 'shopping-prod' -or
+    $workflow -match 'fromJSON\(needs\.deployment-target\.outputs\.runner\)') {
+    throw 'Production deployment must not depend on an externally managed self-hosted runner.'
+}
+
+$productionRegistryAccessPattern = "(?s)Open temporary production registry access.*az acr network-rule add.*--ip-address.*az acr update.*--public-network-enabled true"
+$productionRegistryCleanupPattern = "(?s)Close temporary production registry access.*always\(\).*az acr update.*--public-network-enabled false.*az acr network-rule remove"
+
+if ($workflow -notmatch $productionRegistryAccessPattern -or
+    $workflow -notmatch $productionRegistryCleanupPattern) {
+    throw 'Production image deployment must temporarily allowlist the hosted runner and always restore private ACR access.'
+}
+
+$productionSqlAccessPattern = "(?s)Open temporary SQL firewall rule.*az sql server update.*--enable-public-network true"
+$productionSqlCleanupPattern = "(?s)Remove temporary SQL firewall rule.*always\(\).*az sql server update.*--enable-public-network false"
+
+if ($workflow -notmatch $productionSqlAccessPattern -or
+    $workflow -notmatch $productionSqlCleanupPattern) {
+    throw 'Production migration must temporarily allowlist the hosted runner and always restore private SQL access.'
+}
+
 if ($migrator -notmatch 'GetRequiredEnvironmentVariable\("SHOPPING_API_CLIENT_ID"\)' -or
     $migrator -match 'SHOPPING_API_PRINCIPAL_ID') {
     throw 'The database migrator must use SHOPPING_API_CLIENT_ID as the service-principal SID.'
