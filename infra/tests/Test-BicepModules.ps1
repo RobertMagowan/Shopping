@@ -99,6 +99,11 @@ if (-not $redisModuleCall.Success -or
     throw 'Managed Redis may use a separate region, but private endpoints must remain in the application region.'
 }
 
+if ($orchestrator -notmatch "var\s+sqlPrivateDnsZoneName\s*=\s*'privatelink\$\{environment\(\)\.suffixes\.sqlServerHostname\}'" -or
+    $orchestrator -match "'privatelink\.\$\{environment\(\)\.suffixes\.sqlServerHostname\}'") {
+    throw 'The SQL private DNS zone must not add a second dot before the Azure SQL hostname suffix.'
+}
+
 $publicSqlFirewallRuleMatch = [regex]::Match(
     $sqlModule,
     "(?ms)^resource\s+allowAzureServices\s+'Microsoft.Sql/servers/firewallRules@[^']+'\s*=\s*if\s*\(!enablePrivateEndpoints\).*?(?=^resource\s|^output\s|\z)"

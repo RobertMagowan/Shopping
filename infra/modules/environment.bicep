@@ -125,7 +125,7 @@ var productImagesContainerName = 'product-images'
 var aspNetCoreEnvironment = environmentName == 'prod' ? 'Production' : environmentName == 'dev' ? 'Dev' : 'Test'
 var hasWebClientSecret = !empty(entraExternalIdWebClientSecret)
 var blobPrivateDnsZoneName = 'privatelink.blob.${environment().suffixes.storage}'
-var sqlPrivateDnsZoneName = 'privatelink.${environment().suffixes.sqlServerHostname}'
+var sqlPrivateDnsZoneName = 'privatelink${environment().suffixes.sqlServerHostname}'
 var containerAppsInfrastructureSubnetName = 'snet-container-apps-infrastructure'
 var privateEndpointSubnetName = 'snet-private-endpoints'
 var appGatewaySubnetName = 'snet-appgateway'
