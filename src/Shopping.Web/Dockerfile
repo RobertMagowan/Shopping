@@ -16,6 +16,7 @@ RUN dotnet publish "src/Shopping.Web/Shopping.Web.csproj" \
     --no-restore \
     --output /app/publish \
     /p:UseAppHost=false
+RUN test -f /app/publish/wwwroot/_framework/blazor.web.js
 
 FROM runtime AS final
 WORKDIR /app

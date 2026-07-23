@@ -11,8 +11,7 @@ public sealed class AzureBlobProductImageUrlProvider(
     ProductImageStorageOptions options) : IProductImageUrlProvider
 {
     private readonly SemaphoreSlim userDelegationKeyLock = new(1, 1);
-    private UserDelegationKey? cachedUserDelegationKey;
-    private DateTimeOffset cachedUserDelegationKeyExpiresOn;
+    private UserDelegationKeyCacheEntry? cachedUserDelegationKey;
 
     public async Task<string?> GetImageUrlAsync(string? blobName,
                                                 CancellationToken cancellationToken)
@@ -29,10 +28,9 @@ public sealed class AzureBlobProductImageUrlProvider(
             return imageUri;
         }
 
-        var expiresOn = GetSharedAccessSignatureExpiry(DateTimeOffset.UtcNow);
-        var startsOn = DateTimeOffset.UtcNow.AddMinutes(-5);
-        var userDelegationKey = await GetUserDelegationKeyAsync(startsOn,
-                                                                expiresOn,
+        var signatureWindow = GetSharedAccessSignatureWindow(DateTimeOffset.UtcNow);
+        var userDelegationKey = await GetUserDelegationKeyAsync(signatureWindow.StartsOn,
+                                                                signatureWindow.ExpiresOn,
                                                                 cancellationToken);
 
         var sasBuilder = new BlobSasBuilder
@@ -40,8 +38,8 @@ public sealed class AzureBlobProductImageUrlProvider(
             BlobContainerName = options.ContainerName,
             BlobName = blobName,
             Resource = "b",
-            StartsOn = startsOn,
-            ExpiresOn = expiresOn,
+            StartsOn = signatureWindow.StartsOn,
+            ExpiresOn = signatureWindow.ExpiresOn,
             Protocol = SasProtocol.Https
         };
 
@@ -57,33 +55,59 @@ public sealed class AzureBlobProductImageUrlProvider(
                                                                     DateTimeOffset expiresOn,
                                                                     CancellationToken cancellationToken)
     {
-        if (cachedUserDelegationKey is not null && cachedUserDelegationKeyExpiresOn >= expiresOn)
+        var cacheEntry = Volatile.Read(ref cachedUserDelegationKey);
+
+        if (CanReuseCachedUserDelegationKey(cacheEntry, startsOn, expiresOn))
         {
-            return cachedUserDelegationKey;
+            return cacheEntry!.Key;
         }
 
         await userDelegationKeyLock.WaitAsync(cancellationToken);
 
         try
         {
-            if (cachedUserDelegationKey is not null && cachedUserDelegationKeyExpiresOn >= expiresOn)
+            cacheEntry = Volatile.Read(ref cachedUserDelegationKey);
+
+            if (CanReuseCachedUserDelegationKey(cacheEntry, startsOn, expiresOn))
             {
-                return cachedUserDelegationKey;
+                return cacheEntry!.Key;
             }
 
             var userDelegationKey = await serviceClient.GetUserDelegationKeyAsync(startsOn,
                                                                                   expiresOn,
                                                                                   cancellationToken);
 
-            cachedUserDelegationKey = userDelegationKey.Value;
-            cachedUserDelegationKeyExpiresOn = expiresOn;
+            cacheEntry = new UserDelegationKeyCacheEntry(userDelegationKey.Value,
+                                                         startsOn,
+                                                         expiresOn);
+            Volatile.Write(ref cachedUserDelegationKey, cacheEntry);
 
-            return cachedUserDelegationKey;
+            return cacheEntry.Key;
         }
         finally
         {
             userDelegationKeyLock.Release();
         }
+    }
+
+    private static bool CanReuseCachedUserDelegationKey(UserDelegationKeyCacheEntry? cacheEntry,
+                                                        DateTimeOffset startsOn,
+                                                        DateTimeOffset expiresOn)
+    {
+        return cacheEntry is not null &&
+               CanReuseUserDelegationKey(cacheEntry.StartsOn,
+                                         cacheEntry.ExpiresOn,
+                                         startsOn,
+                                         expiresOn);
+    }
+
+    internal static bool CanReuseUserDelegationKey(DateTimeOffset cachedStartsOn,
+                                                    DateTimeOffset cachedExpiresOn,
+                                                    DateTimeOffset requestedStartsOn,
+                                                    DateTimeOffset requestedExpiresOn)
+    {
+        return cachedStartsOn <= requestedStartsOn &&
+               cachedExpiresOn >= requestedExpiresOn;
     }
 
     private string GetBaseImageUri(string blobName)
@@ -96,12 +120,18 @@ public sealed class AzureBlobProductImageUrlProvider(
         return containerClient.GetBlobClient(blobName).Uri.AbsoluteUri;
     }
 
-    private DateTimeOffset GetSharedAccessSignatureExpiry(DateTimeOffset utcNow)
+    internal (DateTimeOffset StartsOn, DateTimeOffset ExpiresOn) GetSharedAccessSignatureWindow(DateTimeOffset utcNow)
     {
         var lifetimeMinutes = Math.Max(1, options.SharedAccessSignatureLifetimeMinutes);
-        var currentWindow = utcNow.ToUnixTimeSeconds() / (lifetimeMinutes * 60);
-        var nextWindowStart = DateTimeOffset.FromUnixTimeSeconds((currentWindow + 1) * lifetimeMinutes * 60);
+        var lifetimeSeconds = lifetimeMinutes * 60L;
+        var currentWindow = utcNow.ToUnixTimeSeconds() / lifetimeSeconds;
+        var windowStartsOn = DateTimeOffset.FromUnixTimeSeconds(currentWindow * lifetimeSeconds);
 
-        return nextWindowStart;
+        return (windowStartsOn.AddMinutes(-5),
+                windowStartsOn.AddSeconds(lifetimeSeconds * 2));
     }
+
+    private sealed record UserDelegationKeyCacheEntry(UserDelegationKey Key,
+                                                      DateTimeOffset StartsOn,
+                                                      DateTimeOffset ExpiresOn);
 }

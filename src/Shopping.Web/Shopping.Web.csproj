@@ -16,6 +16,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+    <RequiresAspNetWebAssets>true</RequiresAspNetWebAssets>
     <UserSecretsId>shopping-web-entra-external-id</UserSecretsId>
   </PropertyGroup>
 
