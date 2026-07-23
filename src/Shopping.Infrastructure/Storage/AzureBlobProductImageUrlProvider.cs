@@ -12,6 +12,7 @@ public sealed class AzureBlobProductImageUrlProvider(
 {
     private readonly SemaphoreSlim userDelegationKeyLock = new(1, 1);
     private UserDelegationKey? cachedUserDelegationKey;
+    private DateTimeOffset cachedUserDelegationKeyStartsOn;
     private DateTimeOffset cachedUserDelegationKeyExpiresOn;
 
     public async Task<string?> GetImageUrlAsync(string? blobName,
@@ -56,18 +57,18 @@ public sealed class AzureBlobProductImageUrlProvider(
                                                                     DateTimeOffset expiresOn,
                                                                     CancellationToken cancellationToken)
     {
-        if (cachedUserDelegationKey is not null && cachedUserDelegationKeyExpiresOn >= expiresOn)
+        if (CanReuseCachedUserDelegationKey(startsOn, expiresOn))
         {
-            return cachedUserDelegationKey;
+            return cachedUserDelegationKey!;
         }
 
         await userDelegationKeyLock.WaitAsync(cancellationToken);
 
         try
         {
-            if (cachedUserDelegationKey is not null && cachedUserDelegationKeyExpiresOn >= expiresOn)
+            if (CanReuseCachedUserDelegationKey(startsOn, expiresOn))
             {
-                return cachedUserDelegationKey;
+                return cachedUserDelegationKey!;
             }
 
             var userDelegationKey = await serviceClient.GetUserDelegationKeyAsync(startsOn,
@@ -75,6 +76,7 @@ public sealed class AzureBlobProductImageUrlProvider(
                                                                                   cancellationToken);
 
             cachedUserDelegationKey = userDelegationKey.Value;
+            cachedUserDelegationKeyStartsOn = startsOn;
             cachedUserDelegationKeyExpiresOn = expiresOn;
 
             return cachedUserDelegationKey;
@@ -83,6 +85,25 @@ public sealed class AzureBlobProductImageUrlProvider(
         {
             userDelegationKeyLock.Release();
         }
+    }
+
+    private bool CanReuseCachedUserDelegationKey(DateTimeOffset startsOn,
+                                                  DateTimeOffset expiresOn)
+    {
+        return cachedUserDelegationKey is not null &&
+               CanReuseUserDelegationKey(cachedUserDelegationKeyStartsOn,
+                                         cachedUserDelegationKeyExpiresOn,
+                                         startsOn,
+                                         expiresOn);
+    }
+
+    internal static bool CanReuseUserDelegationKey(DateTimeOffset cachedStartsOn,
+                                                    DateTimeOffset cachedExpiresOn,
+                                                    DateTimeOffset requestedStartsOn,
+                                                    DateTimeOffset requestedExpiresOn)
+    {
+        return cachedStartsOn <= requestedStartsOn &&
+               cachedExpiresOn >= requestedExpiresOn;
     }
 
     private string GetBaseImageUri(string blobName)
