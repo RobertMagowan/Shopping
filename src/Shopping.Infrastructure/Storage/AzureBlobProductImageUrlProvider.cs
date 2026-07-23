@@ -11,9 +11,7 @@ public sealed class AzureBlobProductImageUrlProvider(
     ProductImageStorageOptions options) : IProductImageUrlProvider
 {
     private readonly SemaphoreSlim userDelegationKeyLock = new(1, 1);
-    private UserDelegationKey? cachedUserDelegationKey;
-    private DateTimeOffset cachedUserDelegationKeyStartsOn;
-    private DateTimeOffset cachedUserDelegationKeyExpiresOn;
+    private UserDelegationKeyCacheEntry? cachedUserDelegationKey;
 
     public async Task<string?> GetImageUrlAsync(string? blobName,
                                                 CancellationToken cancellationToken)
@@ -57,29 +55,34 @@ public sealed class AzureBlobProductImageUrlProvider(
                                                                     DateTimeOffset expiresOn,
                                                                     CancellationToken cancellationToken)
     {
-        if (CanReuseCachedUserDelegationKey(startsOn, expiresOn))
+        var cacheEntry = Volatile.Read(ref cachedUserDelegationKey);
+
+        if (CanReuseCachedUserDelegationKey(cacheEntry, startsOn, expiresOn))
         {
-            return cachedUserDelegationKey!;
+            return cacheEntry!.Key;
         }
 
         await userDelegationKeyLock.WaitAsync(cancellationToken);
 
         try
         {
-            if (CanReuseCachedUserDelegationKey(startsOn, expiresOn))
+            cacheEntry = Volatile.Read(ref cachedUserDelegationKey);
+
+            if (CanReuseCachedUserDelegationKey(cacheEntry, startsOn, expiresOn))
             {
-                return cachedUserDelegationKey!;
+                return cacheEntry!.Key;
             }
 
             var userDelegationKey = await serviceClient.GetUserDelegationKeyAsync(startsOn,
                                                                                   expiresOn,
                                                                                   cancellationToken);
 
-            cachedUserDelegationKey = userDelegationKey.Value;
-            cachedUserDelegationKeyStartsOn = startsOn;
-            cachedUserDelegationKeyExpiresOn = expiresOn;
+            cacheEntry = new UserDelegationKeyCacheEntry(userDelegationKey.Value,
+                                                         startsOn,
+                                                         expiresOn);
+            Volatile.Write(ref cachedUserDelegationKey, cacheEntry);
 
-            return cachedUserDelegationKey;
+            return cacheEntry.Key;
         }
         finally
         {
@@ -87,12 +90,13 @@ public sealed class AzureBlobProductImageUrlProvider(
         }
     }
 
-    private bool CanReuseCachedUserDelegationKey(DateTimeOffset startsOn,
-                                                  DateTimeOffset expiresOn)
+    private static bool CanReuseCachedUserDelegationKey(UserDelegationKeyCacheEntry? cacheEntry,
+                                                        DateTimeOffset startsOn,
+                                                        DateTimeOffset expiresOn)
     {
-        return cachedUserDelegationKey is not null &&
-               CanReuseUserDelegationKey(cachedUserDelegationKeyStartsOn,
-                                         cachedUserDelegationKeyExpiresOn,
+        return cacheEntry is not null &&
+               CanReuseUserDelegationKey(cacheEntry.StartsOn,
+                                         cacheEntry.ExpiresOn,
                                          startsOn,
                                          expiresOn);
     }
@@ -126,4 +130,8 @@ public sealed class AzureBlobProductImageUrlProvider(
         return (windowStartsOn.AddMinutes(-5),
                 windowStartsOn.AddSeconds(lifetimeSeconds * 2));
     }
+
+    private sealed record UserDelegationKeyCacheEntry(UserDelegationKey Key,
+                                                      DateTimeOffset StartsOn,
+                                                      DateTimeOffset ExpiresOn);
 }
