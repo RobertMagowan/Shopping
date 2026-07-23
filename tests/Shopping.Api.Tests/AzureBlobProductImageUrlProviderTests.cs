@@ -56,4 +56,20 @@ public sealed class AzureBlobProductImageUrlProviderTests
 
         Assert.False(canReuse);
     }
+
+    [Fact]
+    public void DelegationKeyCanBeReusedWhenItCoversRequestedWindow()
+    {
+        var cachedStartsOn = new DateTimeOffset(2026, 7, 23, 5, 35, 0, TimeSpan.Zero);
+        var cachedExpiresOn = new DateTimeOffset(2026, 7, 23, 6, 10, 0, TimeSpan.Zero);
+        var requestedStartsOn = new DateTimeOffset(2026, 7, 23, 5, 45, 0, TimeSpan.Zero);
+        var requestedExpiresOn = new DateTimeOffset(2026, 7, 23, 6, 0, 0, TimeSpan.Zero);
+
+        var canReuse = AzureBlobProductImageUrlProvider.CanReuseUserDelegationKey(cachedStartsOn,
+                                                                                  cachedExpiresOn,
+                                                                                  requestedStartsOn,
+                                                                                  requestedExpiresOn);
+
+        Assert.True(canReuse);
+    }
 }
