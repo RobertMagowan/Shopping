@@ -29,10 +29,9 @@ public sealed class AzureBlobProductImageUrlProvider(
             return imageUri;
         }
 
-        var expiresOn = GetSharedAccessSignatureExpiry(DateTimeOffset.UtcNow);
-        var startsOn = DateTimeOffset.UtcNow.AddMinutes(-5);
-        var userDelegationKey = await GetUserDelegationKeyAsync(startsOn,
-                                                                expiresOn,
+        var signatureWindow = GetSharedAccessSignatureWindow(DateTimeOffset.UtcNow);
+        var userDelegationKey = await GetUserDelegationKeyAsync(signatureWindow.StartsOn,
+                                                                signatureWindow.ExpiresOn,
                                                                 cancellationToken);
 
         var sasBuilder = new BlobSasBuilder
@@ -40,8 +39,8 @@ public sealed class AzureBlobProductImageUrlProvider(
             BlobContainerName = options.ContainerName,
             BlobName = blobName,
             Resource = "b",
-            StartsOn = startsOn,
-            ExpiresOn = expiresOn,
+            StartsOn = signatureWindow.StartsOn,
+            ExpiresOn = signatureWindow.ExpiresOn,
             Protocol = SasProtocol.Https
         };
 
@@ -96,12 +95,14 @@ public sealed class AzureBlobProductImageUrlProvider(
         return containerClient.GetBlobClient(blobName).Uri.AbsoluteUri;
     }
 
-    private DateTimeOffset GetSharedAccessSignatureExpiry(DateTimeOffset utcNow)
+    internal (DateTimeOffset StartsOn, DateTimeOffset ExpiresOn) GetSharedAccessSignatureWindow(DateTimeOffset utcNow)
     {
         var lifetimeMinutes = Math.Max(1, options.SharedAccessSignatureLifetimeMinutes);
-        var currentWindow = utcNow.ToUnixTimeSeconds() / (lifetimeMinutes * 60);
-        var nextWindowStart = DateTimeOffset.FromUnixTimeSeconds((currentWindow + 1) * lifetimeMinutes * 60);
+        var lifetimeSeconds = lifetimeMinutes * 60L;
+        var currentWindow = utcNow.ToUnixTimeSeconds() / lifetimeSeconds;
+        var windowStartsOn = DateTimeOffset.FromUnixTimeSeconds(currentWindow * lifetimeSeconds);
 
-        return nextWindowStart;
+        return (windowStartsOn.AddMinutes(-5),
+                windowStartsOn.AddSeconds(lifetimeSeconds * 2));
     }
 }
