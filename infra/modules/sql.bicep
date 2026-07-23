@@ -7,6 +7,7 @@ param sqlServerName string
 param sqlDatabaseName string
 param sqlDatabaseSkuName string
 param sqlZoneRedundant bool
+param sqlDatabaseUseFreeLimit bool
 param sqlAdministratorLogin string
 
 @secure()
@@ -38,16 +39,29 @@ resource sqlServer 'Microsoft.Sql/servers@2023-08-01-preview' = {
   }
 }
 
-resource sqlDatabase 'Microsoft.Sql/servers/databases@2023-08-01-preview' = {
+resource sqlDatabase 'Microsoft.Sql/servers/databases@2025-01-01' = {
   parent: sqlServer
   name: sqlDatabaseName
   location: location
   tags: tags
-  sku: {
+  sku: sqlDatabaseUseFreeLimit ? {
+    name: sqlDatabaseSkuName
+    tier: 'GeneralPurpose'
+    family: 'Gen5'
+    capacity: 2
+  } : {
     name: sqlDatabaseSkuName
   }
   properties: {
     zoneRedundant: sqlZoneRedundant
+    ...(sqlDatabaseUseFreeLimit ? {
+      autoPauseDelay: 60
+      minCapacity: json('0.5')
+      maxSizeBytes: 34359738368
+      requestedBackupStorageRedundancy: 'Local'
+      useFreeLimit: true
+      freeLimitExhaustionBehavior: 'AutoPause'
+    } : {})
   }
 }
 

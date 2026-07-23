@@ -86,10 +86,13 @@ param containerRegistrySkuName string = environmentName == 'prod' ? 'Premium' : 
 param containerImageTag string = 'bootstrap'
 
 @description('Azure SQL database SKU name.')
-param sqlDatabaseSkuName string = environmentName == 'prod' ? 'GP_Gen5_2' : 'Basic'
+param sqlDatabaseSkuName string = environmentName == 'dev' ? 'GP_S_Gen5_2' : (environmentName == 'prod' ? 'GP_Gen5_2' : 'Basic')
 
 @description('Enable Azure SQL availability-zone redundancy when the selected subscription, region, and SKU support it.')
 param sqlZoneRedundant bool = environmentName == 'prod'
+
+@description('Use the Azure SQL free serverless offer and pause when its monthly allowance is exhausted.')
+param sqlDatabaseUseFreeLimit bool = environmentName == 'dev'
 
 @description('Azure Managed Redis SKU name.')
 param managedRedisSkuName string = 'Balanced_B0'
@@ -165,6 +168,7 @@ module environmentResources 'modules/environment.bicep' = {
     containerImageTag: containerImageTag
     sqlDatabaseSkuName: sqlDatabaseSkuName
     sqlZoneRedundant: sqlZoneRedundant
+    sqlDatabaseUseFreeLimit: sqlDatabaseUseFreeLimit
     managedRedisSkuName: managedRedisSkuName
     managedRedisLocation: managedRedisLocation
     enableFrontDoorImageDelivery: enableFrontDoorImageDelivery

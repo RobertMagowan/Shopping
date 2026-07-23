@@ -53,14 +53,26 @@ if ($sqlModule -notmatch 'param\s+sqlZoneRedundant\s+bool' -or
     throw 'sql.bicep must use the explicit SQL zone-redundancy capability parameter.'
 }
 
+if ($sqlModule -notmatch 'param\s+sqlDatabaseUseFreeLimit\s+bool' -or
+    $sqlModule -notmatch 'useFreeLimit:\s*true' -or
+    $sqlModule -notmatch "freeLimitExhaustionBehavior:\s*'AutoPause'" -or
+    $sqlModule -notmatch 'autoPauseDelay:\s*60' -or
+    $sqlModule -notmatch "minCapacity:\s*json\('0\.5'\)" -or
+    $sqlModule -notmatch 'maxSizeBytes:\s*34359738368' -or
+    $sqlModule -notmatch "requestedBackupStorageRedundancy:\s*'Local'") {
+    throw 'sql.bicep must configure the Azure SQL free serverless offer to pause before incurring charges.'
+}
+
 $redisModulePath = Join-Path $infraRoot 'modules/redis.bicep'
 $redisModule = Get-Content -LiteralPath $redisModulePath -Raw
 
 if ($orchestrator -notmatch 'param\s+managedRedisLocation\s+string' -or
     $orchestrator -notmatch 'param\s+sqlZoneRedundant\s+bool' -or
+    $orchestrator -notmatch 'param\s+sqlDatabaseUseFreeLimit\s+bool' -or
     $orchestrator -notmatch 'location:\s*managedRedisLocation' -or
-    $orchestrator -notmatch 'sqlZoneRedundant:\s*sqlZoneRedundant') {
-    throw 'environment.bicep must pass explicit Redis location and SQL zone-redundancy capabilities.'
+    $orchestrator -notmatch 'sqlZoneRedundant:\s*sqlZoneRedundant' -or
+    $orchestrator -notmatch 'sqlDatabaseUseFreeLimit:\s*sqlDatabaseUseFreeLimit') {
+    throw 'environment.bicep must pass explicit Redis location and SQL database capabilities.'
 }
 
 if ($redisModule -notmatch 'param\s+location\s+string') {
@@ -70,6 +82,17 @@ if ($redisModule -notmatch 'param\s+location\s+string') {
 $devParameters = Get-Content -LiteralPath (Join-Path $infraRoot 'parameters/dev.bicepparam') -Raw
 $testParameters = Get-Content -LiteralPath (Join-Path $infraRoot 'parameters/test.bicepparam') -Raw
 $prodParameters = Get-Content -LiteralPath (Join-Path $infraRoot 'parameters/prod.bicepparam') -Raw
+
+if ($devParameters -notmatch "param\s+sqlDatabaseSkuName\s*=\s*'GP_S_Gen5_2'" -or
+    $devParameters -notmatch 'param\s+sqlDatabaseUseFreeLimit\s*=\s*true') {
+    throw 'Development must use the Azure SQL free serverless offer.'
+}
+
+foreach ($paidParameters in @($testParameters, $prodParameters)) {
+    if ($paidParameters -notmatch 'param\s+sqlDatabaseUseFreeLimit\s*=\s*false') {
+        throw 'Test and production must explicitly disable the Azure SQL free offer.'
+    }
+}
 
 if ($prodParameters -notmatch "readEnvironmentVariable\('MANAGED_REDIS_LOCATION',\s*'uksouth'\)" -or
     $prodParameters -notmatch "readEnvironmentVariable\('SQL_ZONE_REDUNDANT',\s*'true'\)") {

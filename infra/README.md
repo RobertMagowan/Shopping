@@ -35,7 +35,7 @@ The current baseline deploys:
 - One warm replica per app in dev/test; production starts with two and can scale to ten.
 - User-assigned managed identities for runtime access, Key Vault references, and ACR image pulls.
 - Azure Container Registry with administrative credentials disabled.
-- Azure SQL server and database.
+- Azure SQL server and database. Dev uses the free serverless offer; test and production retain explicit paid SKUs.
 - Storage account and `product-images` blob container.
 - Key Vault with RBAC and purge protection.
 - Azure Managed Redis using the `Balanced_B0` SKU, with high availability enabled in production.
@@ -95,6 +95,10 @@ The initial infrastructure deployment creates ACR, user-assigned identities, RBA
 Azure Managed Redis uses encrypted client traffic on port `10000`. Dev and test permit public network access for the managed Container Apps environment; production disables public access and resolves the cache through `privatelink.redis.azure.net`.
 
 `MANAGED_REDIS_LOCATION` can place the managed cache in another UK region when the application region has insufficient cache capacity; the production private endpoint remains in the application VNet. `SQL_ZONE_REDUNDANT` must match the selected subscription, region, and SQL SKU capability. Keep it enabled for production where supported; disabling it retains Azure SQL's built-in local availability but removes availability-zone outage protection.
+
+Dev uses the Azure SQL Database free serverless offer (`GP_S_Gen5_2`) with a 32 GiB data limit, a 0.5 vCore minimum, and a 60-minute auto-pause delay. Its free-limit exhaustion behavior is `AutoPause`, so the database becomes unavailable until the next monthly allowance rather than continuing as a billed serverless database. Test and production explicitly disable the free offer.
+
+Azure does not support converting an existing paid database into a free-offer database. If dev already contains the previous `Basic` database, tear down the dev resource group and redeploy it; retain or export any data that must survive before teardown.
 
 Dev and test also expose Azure SQL through its public endpoint. The SQL module creates the Azure-services firewall rule (`0.0.0.0`) only while private endpoints are disabled; database access still requires Microsoft Entra authentication and the API managed identity's contained database user. Production disables SQL public access and uses Private Link.
 

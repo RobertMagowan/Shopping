@@ -17,6 +17,7 @@ param containerRegistrySkuName = 'Premium'
 param containerImageTag = readEnvironmentVariable('CONTAINER_IMAGE_TAG', 'bootstrap')
 param sqlDatabaseSkuName = 'GP_Gen5_2'
 param sqlZoneRedundant = readEnvironmentVariable('SQL_ZONE_REDUNDANT', 'true') == 'true'
+param sqlDatabaseUseFreeLimit = false
 param managedRedisSkuName = 'Balanced_B0'
 param managedRedisLocation = readEnvironmentVariable('MANAGED_REDIS_LOCATION', 'uksouth')
 param enableFrontDoorImageDelivery = true
