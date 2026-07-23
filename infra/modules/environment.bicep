@@ -55,6 +55,9 @@ param sqlDatabaseSkuName string
 @description('Enable Azure SQL availability-zone redundancy.')
 param sqlZoneRedundant bool
 
+@description('Use the Azure SQL free serverless offer.')
+param sqlDatabaseUseFreeLimit bool
+
 @description('Azure Managed Redis SKU name.')
 param managedRedisSkuName string
 
@@ -216,6 +219,7 @@ module sql 'sql.bicep' = {
     sqlDatabaseName: sqlDatabaseName
     sqlDatabaseSkuName: sqlDatabaseSkuName
     sqlZoneRedundant: sqlZoneRedundant
+    sqlDatabaseUseFreeLimit: sqlDatabaseUseFreeLimit
     sqlAdministratorLogin: sqlAdministratorLogin
     sqlAdministratorPassword: sqlAdministratorPassword
     deploymentPrincipalObjectId: deploymentPrincipalObjectId
