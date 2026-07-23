@@ -42,6 +42,25 @@ public sealed class AzureBlobProductImageUrlProviderTests
     }
 
     [Fact]
+    public void SharedAccessSignatureWindowChangesAtConfiguredBoundary()
+    {
+        var options = new ProductImageStorageOptions
+        {
+            SharedAccessSignatureLifetimeMinutes = 10
+        };
+        var provider = new AzureBlobProductImageUrlProvider(null!,
+                                                            null!,
+                                                            options);
+        var previousWindowEnd = new DateTimeOffset(2026, 7, 23, 5, 49, 59, TimeSpan.Zero);
+        var nextWindowStart = new DateTimeOffset(2026, 7, 23, 5, 50, 0, TimeSpan.Zero);
+
+        var previousWindow = provider.GetSharedAccessSignatureWindow(previousWindowEnd);
+        var nextWindow = provider.GetSharedAccessSignatureWindow(nextWindowStart);
+
+        Assert.NotEqual(previousWindow, nextWindow);
+    }
+
+    [Fact]
     public void DelegationKeyCannotBeReusedWhenItStartsAfterRequestedWindow()
     {
         var cachedStartsOn = new DateTimeOffset(2026, 7, 23, 5, 45, 0, TimeSpan.Zero);
